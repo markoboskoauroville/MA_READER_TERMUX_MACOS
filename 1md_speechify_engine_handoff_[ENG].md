@@ -113,7 +113,21 @@ one word character Speechify prints next to a name lives in the tags as
     }
 
 Models seen in the wild: `simba-english`, `simba-3.0`, `simba-3.2`,
-`simba-multilingual`. `simba-english` is the safe default for English.
+`simba-multilingual`.
+
+**TRAP FIVE, do not follow the docs' model advice blindly.** The documentation
+tells new integrations to use `simba-3.2`, and it is right *if* you only ever
+use the eight curated voices whose ids end `_32` (beatrice_32, dominic_32,
+edmund_32, geffen_32, harper_32, hugh_32, imogen_32, wyatt_32). The moment you
+page through the whole catalogue, most voices are not in that set, and
+`simba-3.2` answers **HTTP 400** for them. Measured 12.8.2026:
+
+    Beatrice (beatrice_32)   simba-english  ok      simba-3.2  ok
+    Harper   (harper)        simba-english  ok      simba-3.2  HTTP 400
+
+So **`simba-english` is the correct default** for any app that offers the full
+catalogue. Both models return identical speech marks, and simba-3.2 is only
+marginally smaller, so there is nothing lost by it.
 
 Response
 
@@ -469,6 +483,7 @@ needs: an accent switch, the four voices, a file picker for the key file, a
     [ ] display names deduped before filling the four seats
     [ ] keys survive an install or update
     [ ] key file 0600, in .gitignore, never printed
+    [ ] model is simba-english, NOT simba-3.2, if the full catalogue is offered
 
 ---
 
@@ -483,3 +498,8 @@ Tested live with 21 keys: all 21 authenticated, pagination confirmed
 mid session revocation confirmed to roll forward and still deliver the
 sentence, quarantine confirmed to persist across restart, and exhaustion
 confirmed to surface a clean error rather than crash.
+
+Re-verified 12.8.2026 against the same account: 21 of 21 keys still working,
+catalogue now 963 voices (33 en-GB, 82 en-US), which is a reminder that the
+catalogue MOVES and must never be hard coded. Model behaviour measured, see
+TRAP FIVE.
