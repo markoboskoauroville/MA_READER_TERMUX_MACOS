@@ -1,0 +1,7 @@
+# Keys never belong in this repository.
+speechify_api.txt
+speechify_failed.json
+speechify_voices.json
+gemini_key.txt
+*.key
+*_api.txt
