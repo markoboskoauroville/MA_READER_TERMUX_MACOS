@@ -3,10 +3,27 @@
 A browser reader for Termux that speaks any text aloud and lights up each word
 as it is spoken. One file installs the whole thing.
 
+### Install once
+
 ```bash
-bash 3sh_i_ma_reader_v3_termux.sh     # install
-mareadweb                             # run
+pkg install curl
+curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main/update.sh
+bash update.sh
 ```
+
+That leaves behind one command. From then on, updating is one word:
+
+```bash
+maread-update            # fetch the newest version and install it
+maread-update --online   # also refresh python / flask / edge-tts
+maread-update --remove   # take the app off, keep the library
+mareadweb                # run it
+```
+
+No GitHub login is needed for any of this — the repository is public, so the
+download is anonymous and no token is ever stored on the phone. The updater
+refuses to install a truncated or wrong-shaped download, so a dropped
+connection leaves the working copy alone.
 
 Nothing new is required beyond what v26 already needed — Python, Flask,
 edge-tts, ffmpeg. The entire Speechify side is standard library.
