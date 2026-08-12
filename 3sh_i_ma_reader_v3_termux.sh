@@ -568,6 +568,53 @@ if [ "$MODE" = "remove" ] || [ "$MODE" = "purge" ]; then
 fi
 printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 
+# ---------------------------------------------------------- hard reinstall --
+# Installing over the top of a previous version was the wrong idea. A file that
+# moved or got renamed between versions simply stayed behind, and worse, a
+# server still running from the last install keeps serving the page out of the
+# process that is already in memory, so the browser shows the old app and the
+# update looks like it did nothing at all. That is exactly what happened.
+#
+# So installing now means: stop whatever is running, put the things worth
+# keeping somewhere safe, delete the whole app folder, write it fresh, and put
+# the kept things back. Keys and settings survive. Nothing else does.
+#
+# The library at ~/.maread is never touched by any of this. Texts and their
+# clips live there and are not part of the app.
+
+# things that must survive a wipe. Keys above all: typing them again every
+# update is the kind of small friction that makes a person stop updating.
+KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_voices.json web_state.json"
+
+STASH=""
+if [ -d "$APPDIR" ]; then
+  # 1. stop the server. A running Flask holds the old code in memory and will
+  #    happily keep serving it after every file underneath it has changed.
+  PIDS="$(pgrep -f "$APPDIR/server.py" 2>/dev/null || true)"
+  if [ -n "$PIDS" ]; then
+    printf '   %sstopping the server that is already running%s\n' "$CYAN" "$OFF"
+    kill $PIDS 2>/dev/null || true
+    sleep 1
+    PIDS="$(pgrep -f "$APPDIR/server.py" 2>/dev/null || true)"
+    [ -n "$PIDS" ] && { kill -9 $PIDS 2>/dev/null || true; sleep 1; }
+  fi
+  command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock >/dev/null 2>&1 || true
+
+  # 2. carry the keys and settings out
+  STASH="$(mktemp -d "${TMPDIR:-/tmp}/maread-keep.XXXXXX")"
+  SAVED=0
+  for f in $KEEP; do
+    if [ -f "$APPDIR/$f" ]; then
+      cp -p "$APPDIR/$f" "$STASH/$f" 2>/dev/null && SAVED=$((SAVED+1))
+    fi
+  done
+  [ "$SAVED" -gt 0 ] && printf '   %skeeping %s file(s): keys and settings%s\n' "$DIM" "$SAVED" "$OFF"
+
+  # 3. wipe. Not an upgrade, a clean slate.
+  printf '   %sremoving the old version%s\n' "$DIM" "$OFF"
+  rm -rf "$APPDIR"
+fi
+
 # only now, once installing is certain, does anything appear on disk
 mkdir -p "$APPDIR/static"
 SETUP_LOG="$APPDIR/install.log"; : > "$SETUP_LOG"
@@ -6608,8 +6655,53 @@ exit $ST
 LAUNCHEOF
 chmod +x "$BIN/mareadweb"
 
+# ------------------------------------------------------------ put keys back --
+if [ -n "$STASH" ] && [ -d "$STASH" ]; then
+  BACK=0
+  for f in $KEEP; do
+    if [ -f "$STASH/$f" ]; then
+      cp -p "$STASH/$f" "$APPDIR/$f" 2>/dev/null && BACK=$((BACK+1))
+    fi
+  done
+  chmod 600 "$APPDIR/speechify_api.txt" 2>/dev/null || true
+  chmod 600 "$APPDIR/gemini_key.txt" 2>/dev/null || true
+  rm -rf "$STASH"
+  [ "$BACK" -gt 0 ] && printf '   %s%s file(s) put back: you do not have to enter a key again%s\n' \
+    "$GREEN" "$BACK" "$OFF"
+fi
+
+# leave behind the one word update command, so this is the last time anyone
+# has to remember a URL
+cat > "$BIN/maread-update" << 'UPDEOF'
+#!/data/data/com.termux/files/usr/bin/bash
+# Fetch the current MA Reader from GitHub and install it.
+set -e
+RAW="https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main"
+FILE="3sh_i_ma_reader_v3_termux.sh"
+MODE="--offline"
+for a in "$@"; do case "$a" in
+  --online) MODE="--online" ;;
+  --remove|-u) MODE="--uninstall" ;;
+esac; done
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+printf '\033[38;5;214m  fetching the newest MA Reader\033[0m\n'
+if ! curl -fsSL --retry 3 --connect-timeout 20 -o "$TMP/$FILE" "$RAW/$FILE"; then
+  printf '\033[38;5;203m  could not reach GitHub. Nothing was changed.\033[0m\n'; exit 1
+fi
+SIZE=$(wc -c < "$TMP/$FILE")
+if [ "$SIZE" -lt 100000 ] || ! head -1 "$TMP/$FILE" | grep -q '^#!' || ! bash -n "$TMP/$FILE" 2>/dev/null; then
+  printf '\033[38;5;203m  the download looks wrong (%s bytes). Nothing was changed.\033[0m\n' "$SIZE"; exit 1
+fi
+printf '  got %s bytes, %s\n\n' "$SIZE" "$(grep -m1 'edition: v' "$TMP/$FILE" | sed 's/.*edition: //')"
+bash "$TMP/$FILE" "$MODE"
+UPDEOF
+chmod +x "$BIN/maread-update"
+
 echo ""
 printf '\n   %sinstalled%s   type %smareadweb%s to run it\n' "$B$GREEN" "$OFF" "$KEY" "$OFF"
+printf '   %snext time, one word updates everything:%s %smaread-update%s\n' \
+  "$DIM" "$OFF" "$KEY" "$OFF"
+printf '   %sif the page still looks old, pull down to reload the browser tab%s\n' "$DIM" "$OFF"
 echo "  serves on port 8081 upward, the first free one, across your Wi-Fi"
 echo ""
 echo " Read tab:    paste text, pick a voice, it speaks and highlights each word."

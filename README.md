@@ -20,6 +20,13 @@ maread-update --remove   # take the app off, keep the library
 mareadweb                # run it
 ```
 
+Installing is a **wipe, not an overwrite**. Any server still running is
+stopped first, because a live Flask keeps serving the old page out of memory
+and makes an update look like it did nothing. Then your keys and settings are
+carried out, the whole app folder is deleted, a fresh one is written, and the
+keys are put back. You never type a key twice. The library at `~/.maread`,
+where your texts and clips live, is never touched.
+
 No GitHub login is needed for any of this — the repository is public, so the
 download is anonymous and no token is ever stored on the phone. The updater
 refuses to install a truncated or wrong-shaped download, so a dropped
