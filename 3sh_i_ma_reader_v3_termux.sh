@@ -584,7 +584,10 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 
 # things that must survive a wipe. Keys above all: typing them again every
 # update is the kind of small friction that makes a person stop updating.
-KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_voices.json web_state.json"
+# NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
+# a single request to rebuild, and carrying a stale one across an update is
+# how the picker got stuck showing four voices out of nine hundred.
+KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json web_state.json"
 
 STASH=""
 if [ -d "$APPDIR" ]; then
@@ -1620,6 +1623,12 @@ def export_dir():
 SP_API = "https://api.sws.speechify.com"
 SPEECHIFY_KEY_FILE = os.path.join(WEB_DIR, "speechify_api.txt")
 SP_CACHE_FILE = os.path.join(WEB_DIR, "speechify_voices.json")
+# The cache is derived data, and its SHAPE changed when the picker went from
+# holding four voices to holding the whole catalogue. A cache written by the
+# older code is still perfectly readable by the newer code, which is exactly
+# the problem: it hands back four voices and the app believes there is only
+# one page. Version it, and treat any other version as if it were not there.
+SP_CACHE_V = 2
 SP_FAIL_FILE = os.path.join(WEB_DIR, "speechify_failed.json")
 
 # Only this shape is a key. The key file people actually keep is a working
@@ -2019,10 +2028,14 @@ def sp_register(voices):
 
 
 def sp_cache_read():
+    """The cached catalogue, or nothing if it was written by an older shape."""
     try:
-        return json.load(open(SP_CACHE_FILE, encoding="utf-8"))
+        d = json.load(open(SP_CACHE_FILE, encoding="utf-8"))
     except Exception:
         return {}
+    if not isinstance(d, dict) or d.get("v") != SP_CACHE_V:
+        return {}
+    return d
 
 
 def sp_catalogue(accent, refresh=False):
@@ -2033,6 +2046,10 @@ def sp_catalogue(accent, refresh=False):
         accent = SP_ACCENT_KEYS[0]
     cached = sp_cache_read()
     have = cached.get("byAccent", {}).get(accent) if isinstance(cached, dict) else None
+    # A belt as well as braces: anything at or under one page is not a
+    # catalogue, it is the remains of an older picker. Go and fetch properly.
+    if have and len(have) <= SP_PER_SET:
+        have = None
     if have and not refresh:
         return sp_register(have), ""
     voices, err = sp_fetch_all_voices()
@@ -2046,7 +2063,7 @@ def sp_catalogue(accent, refresh=False):
         if picked:
             store[acc] = picked
     try:
-        json.dump({"byAccent": store, "at": int(time.time())},
+        json.dump({"v": SP_CACHE_V, "byAccent": store, "at": int(time.time())},
                   open(SP_CACHE_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
@@ -3956,28 +3973,28 @@ body.hassession .tab.player{display:block}
   font-weight:600}
 .accbtn.on{color:var(--text); border-color:var(--tune);
   background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
-/* Sex is read by colour before a name is read at all: dark pink for the
-   women, dark blue for the men. It is a stripe down the left edge rather than
-   a fill, so the selected voice can still be marked by the gold outline
-   without the two meanings fighting each other. */
-:root{--femme:#C2557A; --homme:#3D6EA8}
+/* Sex is read by colour before a name is read at all: deep pink for the
+   women, deep blue for the men. The colour IS the frame. No stripe, no extra
+   element, nothing added to the box that was already there, because the
+   border was sitting there doing nothing anyway.
+
+   Selection is then shown by the gold tint inside plus a gold ring drawn
+   outside the frame, so the two meanings sit one within the other rather
+   than fighting over the same edge. */
+:root{--femme:#8E3358; --homme:#274C7C}
 .spgrid{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin:10px 0 4px}
-.spcell{position:relative; border:1px solid var(--line); background:var(--panel);
-  border-radius:11px; padding:9px 10px 9px 15px; text-align:left; line-height:1.3;
-  overflow:hidden}
-.spcell::before{content:""; position:absolute; left:0; top:0; bottom:0; width:5px}
-.spcell.f::before{background:var(--femme)}
-.spcell.m::before{background:var(--homme)}
+.spcell{border:2px solid var(--line); background:var(--panel);
+  border-radius:11px; padding:9px 10px; text-align:left; line-height:1.3}
+.spcell.f{border-color:var(--femme)}
+.spcell.m{border-color:var(--homme)}
 .spcell b{display:block; font-size:14px; color:var(--text); font-weight:600}
 .spcell small{display:block; font-size:10.5px; color:var(--faint); margin-top:2px}
-.spcell.on{border-color:var(--tune);
-  background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
-/* the same stripe on the four buttons at the top of the reader */
-.voice{position:relative; overflow:hidden}
-.voice.f::before,.voice.m::before{content:""; position:absolute; left:0; top:0;
-  bottom:0; width:4px}
-.voice.f::before{background:var(--femme)}
-.voice.m::before{background:var(--homme)}
+.spcell.on{background:color-mix(in srgb, var(--tune) 12%, var(--panel));
+  box-shadow:0 0 0 2px var(--tune)}
+/* the same frame on the four buttons at the top of the reader */
+.voice.f{border-color:var(--femme)}
+.voice.m{border-color:var(--homme)}
+.voice.on.f, .voice.on.m{box-shadow:0 0 0 2px var(--tune)}
 /* paging: two arrows with the count between them, then a row of numbers */
 .setbar{display:flex; align-items:center; gap:8px; margin:10px 0 8px}
 .setarrow{flex:0 0 auto; width:52px; height:40px; border:1px solid var(--line);
@@ -3997,8 +4014,8 @@ body.hassession .tab.player{display:block}
 .setnum:active{color:var(--text)}
 .setlegend{display:flex; gap:14px; font-size:11px; color:var(--faint);
   margin:2px 0 10px; align-items:center}
-.setlegend i{display:inline-block; width:10px; height:10px; border-radius:3px;
-  margin-right:5px; vertical-align:-1px}
+.setlegend i{display:inline-block; width:12px; height:12px; border-radius:4px;
+  margin-right:5px; vertical-align:-2px; border:2px solid; background:none}
 .spstate{font-size:12px; color:var(--faint); margin:8px 0 2px; line-height:1.5}
 .deadhead{font-size:11px; letter-spacing:.08em; text-transform:uppercase;
   color:var(--faint); margin:14px 0 6px}
@@ -4322,8 +4339,8 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     </div>
     <div class="spgrid" id="spVoiceGrid"></div>
     <div class="setlegend">
-      <span><i style="background:var(--femme)"></i>female</span>
-      <span><i style="background:var(--homme)"></i>male</span>
+      <span><i style="border-color:var(--femme)"></i>female</span>
+      <span><i style="border-color:var(--homme)"></i>male</span>
     </div>
     <div class="setnums" id="spNums"></div>
 
