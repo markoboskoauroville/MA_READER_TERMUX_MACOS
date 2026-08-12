@@ -110,3 +110,14 @@ and never leaves the device. `.gitignore` keeps all of it out of this repo.
 Texts and their per-sentence clips live in `~/.maread`, shared with the
 terminal MA Reader. Clips are immutable and cached per voice, so changing a
 pause or the speed never costs a synthesis.
+
+## Reusing the Speechify engine elsewhere
+
+The key ring, the pagination fix, the voice picker and the speech-mark handling
+are written up as a portable handoff, so any other project can be told to build
+the same engine:
+
+[`1md_speechify_engine_handoff_[ENG].md`](1md_speechify_engine_handoff_%5BENG%5D.md)
+
+Everything in it was verified against the live API rather than read from
+documentation, and each trap that cost a bug is recorded beside the fact.
