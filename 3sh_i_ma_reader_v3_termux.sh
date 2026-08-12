@@ -1638,14 +1638,20 @@ SP_ACCENTS = [
 SP_ACCENT_KEYS = [a["key"] for a in SP_ACCENTS]
 
 # The picker at the top of the reader has room for four buttons and not one
-# more, and they arrive in pairs, one female and one male. These are the names
-# to prefer; the catalogue holds 33 UK and 84 US voices, so there is plenty to
-# fall back on if an account cannot see one of them.
-SP_PREFER = {
-    "uk": {"F": ["Beatrice", "Imogen"], "M": ["Edmund", "Hugh"]},
-    "us": {"F": ["Geffen", "Emily"],    "M": ["Dominic", "Carter"]},
-}
-SP_PER_SEX = 2
+# more. But the catalogue holds 33 UK and 84 US voices and there is no way to
+# know from a name whether you will like a voice, so the four buttons are a
+# WINDOW onto the whole list rather than the whole list itself: the front end
+# pages through it four at a time. Everything here is about the ORDER those
+# pages arrive in, so the ones worth hearing first come first.
+#
+# The order is taken from Speechify's own documentation rather than invented.
+# It names a curated set for new integrations, and separately calls four
+# voices popular. Those go first, then everything else alphabetically.
+SP_CURATED = ["beatrice", "dominic", "edmund", "geffen",
+              "harper", "hugh", "imogen", "wyatt"]
+SP_POPULAR = ["george", "henry", "carly", "sabrina"]
+SP_PER_SET = 4                # four buttons, and no room for a fifth
+SP_PER_SEX = 2                # so each page is two female and two male
 SP_MODEL = "simba-english"
 SP_PAGE = 200                 # the API caps a page here; default is only 50
 SP_MAX_PAGES = 12
@@ -1949,9 +1955,22 @@ def sp_fetch_all_voices():
     return out, ""
 
 
+def _sp_rank(v):
+    """Lower sorts earlier. Curated first, then the ones the docs call
+    popular, then alphabetical."""
+    n = v["name"].lower()
+    if n in SP_CURATED:
+        return (0, SP_CURATED.index(n), n)
+    if n in SP_POPULAR:
+        return (1, SP_POPULAR.index(n), n)
+    return (2, 0, n)
+
+
 def sp_pick(raw_voices, accent):
-    """Four voices for one accent: two female, two male, preferred names first,
-    ordered female, male, female, male so it reads as two pairs."""
+    """EVERY voice for one accent, ordered, and zipped female, male, female,
+    male so that any four consecutive entries are two of each. The front end
+    slices this four at a time, so page one is the curated pairs and the rest
+    of the catalogue follows behind it in a predictable order."""
     loc = next((a["locale"] for a in SP_ACCENTS if a["key"] == accent), "en-GB")
     pool, seen = {"F": [], "M": []}, set()
     for v in raw_voices:
@@ -1969,18 +1988,19 @@ def sp_pick(raw_voices, accent):
         seen.add(nm.lower())
         pool[sex].append({"id": str(vid), "name": nm, "sex": sex,
                           "tone": _sp_tone(v), "accent": accent})
-    picked = {}
     for sex in ("F", "M"):
-        want = [n.lower() for n in SP_PREFER.get(accent, {}).get(sex, [])]
-        pool[sex].sort(key=lambda x: (want.index(x["name"].lower())
-                                      if x["name"].lower() in want else 99,
-                                      x["name"].lower()))
-        picked[sex] = pool[sex][:SP_PER_SEX]
+        pool[sex].sort(key=_sp_rank)
     out = []
-    for i in range(SP_PER_SEX):
-        for sex in ("F", "M"):
-            if i < len(picked[sex]):
-                out.append(picked[sex][i])
+    # zip the two lists in pairs. When one sex runs out the other simply
+    # continues, so no voice is ever dropped for want of a partner.
+    i = j = 0
+    while i < len(pool["F"]) or j < len(pool["M"]):
+        for _ in range(SP_PER_SEX):
+            if i < len(pool["F"]):
+                out.append(pool["F"][i]); i += 1
+        for _ in range(SP_PER_SEX):
+            if j < len(pool["M"]):
+                out.append(pool["M"][j]); j += 1
     return out
 
 
@@ -2188,6 +2208,7 @@ def ensure_unit(tid, vkey, idx):
 _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
+                  "spSet": 0,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
                   "wordhl": True, "wordoffsets": {}, "swipeRev": False,
@@ -2219,6 +2240,10 @@ def load_state():
         st["engine"] = "edge"
     if st.get("spAccent") not in SP_ACCENT_KEYS:
         st["spAccent"] = SP_ACCENT_KEYS[0]
+    try:
+        st["spSet"] = max(0, int(st.get("spSet", 0)))
+    except (TypeError, ValueError):
+        st["spSet"] = 0
     # Gap between sentences runs -1.0 to 3.0 seconds. A negative gap is an
     # overlap: the next sentence starts that much before the current one has
     # finished, which closes the seam between sentences completely. Two
@@ -2850,6 +2875,8 @@ def _sp_payload(accent, refresh=False):
                            "at": rec.get("at", 0), "gone": True})
     return {"accent": accent,
             "accents": SP_ACCENTS,
+            "perSet": SP_PER_SET,
+            "sets": (len(voices) + SP_PER_SET - 1) // SP_PER_SET,
             "voices": [{"id": v["fid"], "vkey": v["vkey"], "name": v["name"],
                         "sex": v["sex"], "tone": v.get("tone", ""),
                         "accent": v["accent"], "engine": "speechify",
@@ -3929,13 +3956,49 @@ body.hassession .tab.player{display:block}
   font-weight:600}
 .accbtn.on{color:var(--text); border-color:var(--tune);
   background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
+/* Sex is read by colour before a name is read at all: dark pink for the
+   women, dark blue for the men. It is a stripe down the left edge rather than
+   a fill, so the selected voice can still be marked by the gold outline
+   without the two meanings fighting each other. */
+:root{--femme:#C2557A; --homme:#3D6EA8}
 .spgrid{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin:10px 0 4px}
-.spcell{border:1px solid var(--line); background:var(--panel);
-  border-radius:11px; padding:9px 10px; text-align:left; line-height:1.3}
+.spcell{position:relative; border:1px solid var(--line); background:var(--panel);
+  border-radius:11px; padding:9px 10px 9px 15px; text-align:left; line-height:1.3;
+  overflow:hidden}
+.spcell::before{content:""; position:absolute; left:0; top:0; bottom:0; width:5px}
+.spcell.f::before{background:var(--femme)}
+.spcell.m::before{background:var(--homme)}
 .spcell b{display:block; font-size:14px; color:var(--text); font-weight:600}
 .spcell small{display:block; font-size:10.5px; color:var(--faint); margin-top:2px}
 .spcell.on{border-color:var(--tune);
   background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
+/* the same stripe on the four buttons at the top of the reader */
+.voice{position:relative; overflow:hidden}
+.voice.f::before,.voice.m::before{content:""; position:absolute; left:0; top:0;
+  bottom:0; width:4px}
+.voice.f::before{background:var(--femme)}
+.voice.m::before{background:var(--homme)}
+/* paging: two arrows with the count between them, then a row of numbers */
+.setbar{display:flex; align-items:center; gap:8px; margin:10px 0 8px}
+.setarrow{flex:0 0 auto; width:52px; height:40px; border:1px solid var(--line);
+  background:var(--panel); color:var(--text); border-radius:11px; font-size:19px;
+  line-height:1; padding:0}
+.setarrow:disabled{color:var(--faint); opacity:.4}
+.setarrow:active:not(:disabled){border-color:var(--tune)}
+.setcount{flex:1; text-align:center; font-size:13.5px; color:var(--dim);
+  font-variant-numeric:tabular-nums}
+.setcount b{color:var(--text); font-weight:600}
+.setnums{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px}
+.setnum{min-width:34px; height:34px; border:1px solid var(--line);
+  background:var(--panel); color:var(--dim); border-radius:9px; font-size:13px;
+  padding:0 6px; font-variant-numeric:tabular-nums}
+.setnum.on{color:var(--text); border-color:var(--tune);
+  background:color-mix(in srgb, var(--tune) 14%, var(--panel))}
+.setnum:active{color:var(--text)}
+.setlegend{display:flex; gap:14px; font-size:11px; color:var(--faint);
+  margin:2px 0 10px; align-items:center}
+.setlegend i{display:inline-block; width:10px; height:10px; border-radius:3px;
+  margin-right:5px; vertical-align:-1px}
 .spstate{font-size:12px; color:var(--faint); margin:8px 0 2px; line-height:1.5}
 .deadhead{font-size:11px; letter-spacing:.08em; text-transform:uppercase;
   color:var(--faint); margin:14px 0 6px}
@@ -4223,9 +4286,79 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
       <b>Speechify</b><small>keyed &middot; English only</small></button>
   </div>
 
-  <!-- The order here is how often a thing is touched, not how important it
-       sounds: speed and the pauses every session, the Gemini key perhaps once
-       ever. Each card is tinted so the block you want is findable by colour. -->
+
+  <!-- Voices come first in both tabs. It is the thing reached for most and
+       the only part of Settings that differs between the two engines, so it
+       sits directly under the buttons that choose them. -->
+  <div class="group g-voice" data-eng="edge">
+    <h3>Edge voices</h3>
+    <div class="langhint">Tick a language to add its two voices, one female and
+      one male, to the picker at the top of the reader. Untick to hide them.</div>
+    <div class="lang-tools">
+      <button id="langAll">Select all</button>
+      <button id="langNone">Clear</button>
+    </div>
+    <div class="langlist" id="langList"></div>
+  </div>
+
+  <div class="group g-sp" data-eng="speechify">
+    <h3>Speechify voices</h3>
+    <div class="langhint">Speechify has no Croatian and no other Slavic voice,
+      so this engine is English and nothing else. Pick an accent, then page
+      through its voices four at a time. There are 33 British and 84 American
+      voices and no way to tell from a name whether you will like one, so the
+      four buttons at the top of the reader are a window onto the list rather
+      than the whole of it: whichever four are showing here are the four up
+      there, ready to try.
+      <br><br>The first page holds the voices Speechify itself puts forward
+      for new work, then the ones it calls popular, then the rest by name.
+      Every page is two women and two men.</div>
+    <div class="accrow" id="spAccents"></div>
+
+    <div class="setbar">
+      <button class="setarrow" id="spPrev" title="Previous four">&#8592;</button>
+      <span class="setcount" id="spCount"></span>
+      <button class="setarrow" id="spNext" title="Next four">&#8594;</button>
+    </div>
+    <div class="spgrid" id="spVoiceGrid"></div>
+    <div class="setlegend">
+      <span><i style="background:var(--femme)"></i>female</span>
+      <span><i style="background:var(--homme)"></i>male</span>
+    </div>
+    <div class="setnums" id="spNums"></div>
+
+    <div class="wsub">Keys</div>
+    <div class="keybox">
+      <div class="keyhead">Key ring
+        <span class="keystate" id="spKeyState">not set</span></div>
+      <label class="keybtn">Choose .txt key file
+        <input type="file" id="spKeyFile" accept=".txt,text/plain" hidden></label>
+      <button class="keybtn ghost" id="spRefresh">Test again</button>
+      <button class="keybtn ghost" id="spForget">Forget</button>
+      <div class="keyerr" id="spKeyErr"></div>
+    </div>
+    <div class="spstate" id="spState"></div>
+    <div id="spDead"></div>
+    <div class="langhint">One key per line, with a name above it saying whose
+      it is; anything that is not a key is read as a label, so a heading or a
+      note in the file is never mistaken for a credential.
+      <br><br>Keys are tried in file order and nothing is tested in advance.
+      The first key that is not already known to be dead is simply used, and it
+      keeps being used until a request comes back rejected. Only then is it
+      marked dead, here, permanently, and only then does the ring roll on to
+      the next one and repeat the sentence that failed. So a dead key costs one
+      wasted request in its whole life, and a working ring costs none at all.
+      A key that is merely rate limited is stood down for a few minutes rather
+      than condemned, and a key is never blamed for the network being down.
+      <br><br>The file is copied into the app folder and never leaves this
+      phone. Nothing but the first six and last four characters of a key is
+      ever shown, and the dead list stores a fingerprint rather than the key,
+      so it gives up nothing at all.</div>
+  </div>
+
+  <!-- Then the rest, ordered by how often a thing is touched, not how
+       important it sounds. Each card is tinted so the block you want is
+       findable by colour. -->
   <div class="group g-play">
     <h3>Playback</h3>
     <div class="rowctl">
@@ -4364,55 +4497,6 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     <div class="syncends"><span>later</span><span>earlier</span></div>
   </div>
 
-  <div class="group g-voice" data-eng="edge">
-    <h3>Edge voices</h3>
-    <div class="langhint">Tick a language to add its two voices, one female and
-      one male, to the picker at the top of the reader. Untick to hide them.</div>
-    <div class="lang-tools">
-      <button id="langAll">Select all</button>
-      <button id="langNone">Clear</button>
-    </div>
-    <div class="langlist" id="langList"></div>
-  </div>
-
-  <div class="group g-sp" data-eng="speechify">
-    <h3>Speechify voices</h3>
-    <div class="langhint">Speechify has no Croatian and no other Slavic voice,
-      so this engine is English and nothing else. Pick an accent and the four
-      buttons at the top of the reader fill with its voices, two female and two
-      male, the way the Edge language pairs do.</div>
-    <div class="accrow" id="spAccents"></div>
-    <div class="spgrid" id="spVoiceGrid"></div>
-
-    <div class="wsub">Keys</div>
-    <div class="keybox">
-      <div class="keyhead">Key ring
-        <span class="keystate" id="spKeyState">not set</span></div>
-      <label class="keybtn">Choose .txt key file
-        <input type="file" id="spKeyFile" accept=".txt,text/plain" hidden></label>
-      <button class="keybtn ghost" id="spRefresh">Test again</button>
-      <button class="keybtn ghost" id="spForget">Forget</button>
-      <div class="keyerr" id="spKeyErr"></div>
-    </div>
-    <div class="spstate" id="spState"></div>
-    <div id="spDead"></div>
-    <div class="langhint">One key per line, with a name above it saying whose
-      it is; anything that is not a key is read as a label, so a heading or a
-      note in the file is never mistaken for a credential.
-      <br><br>Keys are tried in file order and nothing is tested in advance.
-      The first key that is not already known to be dead is simply used, and it
-      keeps being used until a request comes back rejected. Only then is it
-      marked dead, here, permanently, and only then does the ring roll on to
-      the next one and repeat the sentence that failed. So a dead key costs one
-      wasted request in its whole life, and a working ring costs none at all.
-      A key that is merely rate limited is stood down for a few minutes rather
-      than condemned, and a key is never blamed for the network being down.
-      <br><br>The file is copied into the app folder and never leaves this
-      phone. Nothing but the first six and last four characters of a key is
-      ever shown, and the dead list stores a fingerprint rather than the key,
-      so it gives up nothing at all.</div>
-  </div>
-
   <div class="group g-adv">
     <h3>Advanced</h3>
     <div class="wsub">Gemini key (optional)</div>
@@ -4499,7 +4583,7 @@ function applySync(){
   const v = document.querySelector("#syncVal");
   if(v) v.textContent = (ms>0?"+":"") + ms + " ms";
   const lbl = document.querySelector("#syncVoice");
-  if(lbl){ const vc = ST.voices.find(x=>x.id===ST.voice);
+  if(lbl){ const vc = anyVoice(ST.voice);
            lbl.textContent = vc ? "for "+vc.name : ""; }
 }
 const LH = {1:1.35, 2:1.5, 3:1.72, 4:1.95, 5:2.2};
@@ -4538,7 +4622,8 @@ const ST = {
   langs: [], enabledLangs: ["en","hr"],
   /* v3: two engines. Edge is the free Microsoft one this app started on;
      Speechify is keyed, English only, and brings its own word timings. */
-  engine: "edge", spAccent: "uk", spVoices: [], spInfo: {},
+  engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
+  spSet: 0, spPerSet: 4,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -4586,12 +4671,31 @@ function edgeVoices(){
   const on = enabledSet();
   return ST.voices.filter(v => on.has(v.lang));
 }
+/* The Speechify catalogue is far longer than the four buttons at the top of
+   the reader, so those four are a WINDOW onto it. This is that window, and
+   everything else, the strip and the grid in Settings, reads from here so the
+   two can never disagree about which four are showing. */
+function spSets(){
+  const n = (ST.spVoices || []).length;
+  return Math.max(1, Math.ceil(n / (ST.spPerSet || 4)));
+}
+function spClampSet(){
+  ST.spSet = Math.max(0, Math.min(spSets() - 1, ST.spSet | 0));
+  return ST.spSet;
+}
+function spWindow(){
+  const per = ST.spPerSet || 4, s = spClampSet();
+  return (ST.spVoices || []).slice(s * per, s * per + per);
+}
 function shownVoices(){
-  return ST.engine === "speechify" ? (ST.spVoices || []) : edgeVoices();
+  return ST.engine === "speechify" ? spWindow() : edgeVoices();
 }
+/* the whole list, for looking a voice up by id even when it is not on screen */
+function spAll(){ return ST.spVoices || []; }
 function anyVoice(id){
-  return (ST.spVoices||[]).find(x=>x.id===id) || ST.voices.find(x=>x.id===id);
+  return spAll().find(x=>x.id===id) || ST.voices.find(x=>x.id===id);
 }
+function sexClass(v){ return v.sex === "F" ? "f" : (v.sex === "M" ? "m" : ""); }
 function voiceSub(v){
   if(v.engine !== "speechify") return v.label;
   /* four buttons across a phone leaves no room for "English (United Kingdom)
@@ -4611,7 +4715,7 @@ function renderVoices(){
   document.body.classList.remove("novoice");
   list.forEach(v => {
     const b = document.createElement("button");
-    b.className = "voice" + (v.id===ST.voice ? " on":"");
+    b.className = "voice " + sexClass(v) + (v.id===ST.voice ? " on":"");
     b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
     b.onclick = ()=> setVoice(v.id);
     wrap.appendChild(b);
@@ -4727,21 +4831,59 @@ function renderSpAccents(){
 function renderSpGrid(){
   const wrap = $("#spVoiceGrid"); if(!wrap) return;
   wrap.innerHTML = "";
-  const list = ST.spVoices || [];
+  const list = spWindow();
   if(!list.length){
     const d = document.createElement("div");
     d.className = "spstate";
     d.textContent = "No voices yet. Load a key file below.";
-    wrap.appendChild(d); return;
+    wrap.appendChild(d);
+    renderSpPager(); return;
   }
   list.forEach(v=>{
     const b = document.createElement("button");
-    b.className = "spcell" + (v.id === ST.voice ? " on" : "");
+    b.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
     b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
     b.onclick = ()=>{ if(ST.engine !== "speechify") setEngine("speechify", true);
                       setVoice(v.id); renderSpGrid(); };
     wrap.appendChild(b);
   });
+  renderSpPager();
+}
+
+/* Paging. Two arrows and a count, then a row of numbers so any page is one
+   tap away rather than forty. With 84 American voices that is 21 pages, and
+   walking to page 19 with an arrow would be absurd. */
+function renderSpPager(){
+  const cnt = $("#spCount"), prev = $("#spPrev"), next = $("#spNext"),
+        nums = $("#spNums");
+  const total = spSets(), cur = spClampSet(), have = spAll().length;
+  if(cnt){
+    cnt.innerHTML = have
+      ? `<b>${cur + 1} / ${total}</b> &middot; ${have} voices`
+      : "";
+  }
+  if(prev) prev.disabled = (cur <= 0);
+  if(next) next.disabled = (cur >= total - 1);
+  if(nums){
+    nums.innerHTML = "";
+    if(have){
+      for(let i = 0; i < total; i++){
+        const b = document.createElement("button");
+        b.className = "setnum" + (i === cur ? " on" : "");
+        b.textContent = String(i + 1);
+        b.onclick = ()=> spGoSet(i);
+        nums.appendChild(b);
+      }
+    }
+  }
+}
+function spGoSet(i){
+  const total = spSets();
+  ST.spSet = Math.max(0, Math.min(total - 1, i));
+  /* The window moved, so the four at the top of the reader are different
+     voices now. Show them, but do not switch the voice that is speaking:
+     changing page is browsing, choosing a voice is a tap on one. */
+  renderSpGrid(); renderVoices(); persist();
 }
 function spWhen(ts){
   if(!ts) return "";
@@ -4818,6 +4960,8 @@ function applySpInfo(d){
   ST.spInfo = d;
   if(d.accent) ST.spAccent = d.accent;
   ST.spVoices = (d.voices || []);
+  if(d.perSet) ST.spPerSet = d.perSet;
+  spClampSet();
   renderSpAccents(); renderSpGrid(); renderSpKeys(); renderSpDead();
   if(ST.engine === "speechify") renderVoices();
 }
@@ -4827,7 +4971,7 @@ function loadSpeechify(){
 }
 function setSpAccent(acc){
   if(acc === ST.spAccent && (ST.spVoices||[]).length) return;
-  ST.spAccent = acc; renderSpAccents();
+  ST.spAccent = acc; ST.spSet = 0; renderSpAccents();
   api("/api/speechify/accent", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({accent: acc})})
@@ -5606,7 +5750,7 @@ function delText(tid,title){
   });
 }
 function exportText(tid){
-  const vn = (ST.voices.find(v=>v.id===ST.voice)||{}).name||"";
+  const vn = (anyVoice(ST.voice)||{}).name||"";
   toast("Exporting sentence clips, text and timing in "+vn+"...");
   api("/api/export",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({tid, vkey:ST.vkey, meta:!!ST.aimeta})})
@@ -5638,6 +5782,7 @@ function persist(){
         wordoffsets:ST.wordoffsets, aimeta:ST.aimeta,
         resume:ST.resume, swipeRev:ST.swipeRev,
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
+        spSet:ST.spSet||0,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
   }, 250);
 }
@@ -5706,6 +5851,10 @@ function bind(){
           if(d.ready && ST.engine !== "speechify") setEngine("speechify");
         }).catch(()=>{ if(err) err.textContent = "Could not save the keys."; });
     };
+  }
+  { const p = $("#spPrev"), n = $("#spNext");
+    if(p) p.onclick = ()=> spGoSet(ST.spSet - 1);
+    if(n) n.onclick = ()=> spGoSet(ST.spSet + 1);
   }
   { const rb = $("#spRefresh");
     if(rb) rb.onclick = ()=>{
@@ -5924,7 +6073,7 @@ function pasteFromClipboard(){
 function makeOffline(){
   const text=($("#pasteBox").value||"").trim();
   if(!text){ toast("Paste some text first."); return; }
-  const vn=(ST.voices.find(v=>v.id===ST.voice)||{}).name||"";
+  const vn=(anyVoice(ST.voice)||{}).name||"";
   const btn=$("#saveOfflineBtn"); const old=btn.textContent;
   btn.disabled=true; btn.textContent="Working...";
   toast("Saving to Offline in "+vn+"...");
@@ -6453,8 +6602,11 @@ function boot(){
     ST.engine  = (st.engine === "speechify") ? "speechify" : "edge";
     ST.spAccent = (st.spAccent === "us") ? "us" : "uk";
     ST.spVkey  = st.spVkey || "";
+    ST.spSet   = Math.max(0, st.spSet | 0);
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
+            if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
+    spClampSet();
     /* a saved Speechify engine with no voices behind it (no key yet, or no
        network) quietly falls back to Edge rather than showing an empty strip */
     if(ST.engine === "speechify" && !(ST.spVoices||[]).length) ST.engine = "edge";
@@ -6463,6 +6615,12 @@ function boot(){
     if(ST.engine === "speechify"){
       v = (ST.spVkey && ST.spVoices.find(x=>x.vkey===ST.spVkey))
           || ST.spVoices.find(x=>x.id===(st.voice||0)) || ST.spVoices[0];
+      /* open on the page the remembered voice actually lives on, or it would
+         not be among the four at the top and could not be seen at all */
+      if(v){
+        const at = ST.spVoices.indexOf(v);
+        if(at >= 0) ST.spSet = Math.floor(at / (ST.spPerSet || 4));
+      }
     }
     if(!v) v = voices[0];
     ST.vkey = v.vkey; ST.voice = v.id;
