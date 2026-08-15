@@ -2225,7 +2225,7 @@ def ensure_unit(tid, vkey, idx):
 _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
-                  "spSet": 0, "bgResume": False,
+                  "spSet": 0, "bgResume": False, "bothEngines": False,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
                   "wordhl": True, "wordoffsets": {}, "swipeRev": False,
@@ -3565,6 +3565,15 @@ header{
   overflow-x:auto; overflow-y:hidden; padding:1px 46px 3px 1px;
   -webkit-overflow-scrolling:touch; scrollbar-width:none}
 .voices::-webkit-scrollbar{display:none}
+/* Both engines at once. The strip becomes a column of two strips, each one
+   scrolling on its own, so Speechify on top and Edge underneath never fight
+   over the same sideways swipe. */
+.voices.dual{flex-direction:column; gap:5px; overflow-x:hidden;
+  padding-right:1px}
+.vrow{display:flex; gap:6px; flex-wrap:nowrap; overflow-x:auto;
+  overflow-y:hidden; padding:1px 46px 2px 1px;
+  -webkit-overflow-scrolling:touch; scrollbar-width:none}
+.vrow::-webkit-scrollbar{display:none}
 .voice{flex:0 0 auto; min-width:96px; padding:7px 10px; border-radius:9px;
   border:1px solid var(--line); background:var(--panel);
   color:var(--dim); font-size:12px; line-height:1.15; text-align:center}
@@ -4333,6 +4342,9 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
   <!-- Two engines, two buttons, and the cards below follow whichever is
        chosen. Everything to do with voices is engine-shaped, so it hides;
        speed, the pauses, the text and the colours belong to both and stay. -->
+  <div class="chips" id="bothWrap" style="margin:0 0 12px">
+    <button class="chip" id="bothTog">Show both engines</button>
+  </div>
   <div class="engtabs" id="engTabs">
     <button class="engtab" data-engine="edge">
       <b>Edge</b><small>free &middot; 13 languages</small></button>
@@ -4692,7 +4704,7 @@ const ST = {
   /* v3: two engines. Edge is the free Microsoft one this app started on;
      Speechify is keyed, English only, and brings its own word timings. */
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
-  spSet: 0, spPerSet: 4,
+  spSet: 0, spPerSet: 4, bothEngines: false,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -4773,22 +4785,38 @@ function voiceSub(v){
   const sex = (v.sex === "F") ? "female" : "male";
   return acc + " " + sex + (v.tone ? " \u00b7 " + v.tone : "");
 }
+function voiceBtn(v){
+  const b = document.createElement("button");
+  b.className = "voice " + sexClass(v) + (v.id===ST.voice ? " on":"");
+  b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
+  b.onclick = ()=> setVoice(v.id);
+  return b;
+}
 function renderVoices(){
   const wrap = $("#voices"); wrap.innerHTML = "";
-  const list = shownVoices();
+  /* Both engines at once, when asked for and when there is something in
+     both. Speechify goes on top because its row is the one that changes as
+     you page through it; Edge underneath is the settled one. */
+  const sp = spWindow(), ed = edgeVoices();
+  const dual = !!ST.bothEngines && sp.length > 0 && ed.length > 0;
+  wrap.classList.toggle("dual", dual);
+  const list = dual ? sp.concat(ed) : shownVoices();
   // nothing to show: the whole strip disappears, the reader quietly keeps
   // using the last voice that was picked (ST.voice stays as it was)
   if(!list.length){ wrap.style.display = "none";
     document.body.classList.add("novoice"); return; }
   wrap.style.display = "";
   document.body.classList.remove("novoice");
-  list.forEach(v => {
-    const b = document.createElement("button");
-    b.className = "voice " + sexClass(v) + (v.id===ST.voice ? " on":"");
-    b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
-    b.onclick = ()=> setVoice(v.id);
-    wrap.appendChild(b);
-  });
+  if(dual){
+    [sp, ed].forEach(rowList => {
+      const row = document.createElement("div");
+      row.className = "vrow";
+      rowList.forEach(v => row.appendChild(voiceBtn(v)));
+      wrap.appendChild(row);
+    });
+  } else {
+    list.forEach(v => wrap.appendChild(voiceBtn(v)));
+  }
   // keep the selected chip in view when the strip scrolls
   const onChip = wrap.querySelector(".voice.on");
   if(onChip && onChip.scrollIntoView) try{
@@ -4844,6 +4872,11 @@ function applyEnabledLangs(onSet){
 }
 function setVoice(id){
   const v = anyVoice(id); if(!v) return;
+  /* With both rows on screen a voice can be picked from the engine that is
+     not currently selected. The voice wins: the engine follows it, rather
+     than the tap being quietly ignored. */
+  const want = (v.engine === "speechify") ? "speechify" : "edge";
+  if(ST.engine !== want){ ST.engine = want; applyEngineCards(); }
   const wasPlaying = ST.playing;
   ST.voice = id; ST.vkey = v.vkey; boundsCache.clear(); silCache.clear(); clearWarm();
   renderVoices(); applySync(); persist();
@@ -5693,6 +5726,7 @@ function step(kind, d){
 
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
+  { const b=$("#bothTog"); if(b) b.classList.toggle("on", !!ST.bothEngines); }
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
@@ -5925,6 +5959,7 @@ function persist(){
         resume:ST.resume, swipeRev:ST.swipeRev,
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
+        bothEngines:!!ST.bothEngines,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
   }, 250);
 }
@@ -6022,6 +6057,13 @@ function bind(){
     ST.volume = parseInt(e.target.value,10); applyVolume(); persist();
   });
 
+  { const b=$("#bothTog");
+    if(b) b.onclick = ()=>{
+      ST.bothEngines = !ST.bothEngines;
+      refreshToggles(); renderVoices(); persist();
+      toast(ST.bothEngines ? "Speechify on top, Edge below" : "One engine");
+    };
+  }
   { const b=$("#bgResumeTog");
     if(b) b.onclick = ()=>{
       ST.bgResume = !ST.bgResume;
@@ -6764,6 +6806,7 @@ function boot(){
     ST.spVkey  = st.spVkey || "";
     ST.spSet   = Math.max(0, st.spSet | 0);
     ST.bgResume = !!st.bgResume;
+    ST.bothEngines = !!st.bothEngines;
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
             if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
@@ -6807,8 +6850,9 @@ function boot(){
         ? st.wordoffsets : {};
     // if the remembered voice belongs to a language that is not enabled,
     // fall back to the first voice of the first enabled language
-    if(!shownVoices().some(x=>x.id===ST.voice)){
-      const first = shownVoices()[0];
+    const _vis = ST.bothEngines ? spWindow().concat(edgeVoices()) : shownVoices();
+    if(!_vis.some(x=>x.id===ST.voice)){
+      const first = _vis[0];
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
