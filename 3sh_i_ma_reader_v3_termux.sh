@@ -3679,8 +3679,20 @@ body.wordhl .sent.paused .w.now{
 .bar{flex:1; height:5px; border-radius:3px; background:var(--line); overflow:hidden}
 .bar > i{display:block; height:100%; width:0;
   background:linear-gradient(90deg,var(--teal),var(--play))}
-.counter{font-size:12px; color:var(--dim); min-width:54px; text-align:right;
-  font-variant-numeric:tabular-nums}
+/* The counter is a button now. It says how far in you are and how long is
+   left, and pressing it clears the session and puts the time back to zero.
+   That is what replaced the small cross in the corner: a wide target that
+   says what it does, instead of a tiny one that looked like danger. */
+.counter{font-size:12px; color:var(--dim); min-width:108px; text-align:right;
+  font-variant-numeric:tabular-nums; border:1px solid transparent;
+  background:transparent; border-radius:9px; padding:5px 8px; line-height:1.2}
+.counter b{color:var(--text); font-weight:600; margin-left:5px}
+.counter:active{border-color:var(--line); color:var(--text)}
+
+/* An empty paste box is a paste button the size of the screen. When there is
+   text in it, it goes back to being an ordinary box. */
+#pasteBox.port{border-style:dashed; border-color:var(--tune);
+  background:color-mix(in srgb, var(--tune) 6%, var(--panel)); cursor:copy}
 
 .transport{display:flex; align-items:center; justify-content:center; gap:7px}
 .tbtn{border:1px solid var(--line); background:var(--panel); border-radius:12px;
@@ -4094,7 +4106,6 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
       <button class="tab player" id="playerJump" title="Jump to the player">Player</button>
       <button class="tab" data-tab="offline">Offline</button>
       <button class="tab" data-tab="help">Help</button>
-      <button class="tab-x" id="resetX" title="Close and start a fresh paste">&#10005;</button>
     </nav>
   </div>
 </header>
@@ -4103,7 +4114,7 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
   <!-- HOME -->
   <section class="view home" id="homeView">
     <h2>Paste a text to read</h2>
-    <textarea id="pasteBox" placeholder="Paste or type anything here. Links and Markdown are stripped automatically, so only the words are read."></textarea>
+    <textarea id="pasteBox" placeholder="Tap here to paste and start reading. Or type. Links and Markdown are stripped automatically, so only the words are read."></textarea>
     <div class="home-actions">
       <button class="btn primary" id="readBtn">Read it</button>
       <button class="btn" id="saveOfflineBtn">Save offline</button>
@@ -4133,7 +4144,8 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     <div class="controls off-controls">
       <div class="progress">
         <div class="bar"><i id="barFill"></i></div>
-        <span class="counter" id="counter">0 / 0</span>
+        <button class="counter" id="counter"
+          title="How much is left. Press to clear and start again.">0 / 0</button>
       </div>
       <div class="yt-bar">
         <div class="ytgroup">
@@ -4186,7 +4198,8 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     <div class="controls off-controls">
       <div class="progress">
         <input type="range" id="offSeek" class="seek" min="0" max="1000" value="0">
-        <span class="counter" id="offCounter">0 / 0</span>
+        <button class="counter" id="offCounter"
+          title="How much is left. Press to clear and start again.">0 / 0</button>
       </div>
       <div class="yt-bar">
         <div class="ytgroup">
@@ -5219,9 +5232,60 @@ function highlight(i, paused){
   }
   updateCounter();
 }
+/* ---------- how long is left ----------
+   Nothing knows the true length of a text until every clip has been made,
+   and making them all up front would defeat the point of a cache that only
+   builds what is needed. So this measures what it can and reasons about the
+   rest: any sentence already spoken has a real duration in the bounds cache,
+   and the ratio of seconds to characters from those is applied to the
+   sentences not yet made. Before anything has been spoken it falls back to
+   about fourteen and a half characters a second, which is close enough for a
+   number that is only ever a guide.
+
+   The two pauses and the speed are all folded in, because a two second pause
+   between words on a long text is not a rounding error, it is half an hour. */
+function estRate(){
+  let mc = 0, ms = 0;
+  (ST.sentences || []).forEach((s, i) => {
+    const t = boundsCache.get(i);
+    if(t && t.length){ mc += (s || "").length; ms += t[t.length - 1].d || 0; }
+  });
+  return (mc > 60 && ms > 0) ? (ms / mc) : (1 / 14.5);
+}
+function estSeconds(from){
+  const S = ST.sentences || [];
+  if(!S.length) return 0;
+  const rate = estRate(), sp = Math.max(0.25, ST.speed || 1);
+  let sec = 0, n = 0;
+  for(let i = Math.max(0, from | 0); i < S.length; i++){
+    const s = S[i] || "";
+    sec += (s.length * rate) / sp;
+    if(ST.wgap > 0){
+      /* a real count of the silences if we measured them, else one between
+         each pair of words, which is what they nearly always are */
+      const runs = silCache.get(i);
+      const gaps = (runs && runs.length) ? runs.length
+                 : Math.max(0, s.trim().split(/\s+/).length - 1);
+      sec += gaps * ST.wgap;
+    }
+    n++;
+  }
+  sec += Math.max(0, n - 1) * (ST.gap || 0);   /* may be negative: overlap */
+  return Math.max(0, sec);
+}
+function fmtTime(s){
+  s = Math.round(s);
+  if(s < 1) return "0:00";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), q = s % 60;
+  const pad = v => String(v).padStart(2, "0");
+  return h ? (h + ":" + pad(m) + ":" + pad(q)) : (m + ":" + pad(q));
+}
 function updateCounter(){
-  const n = ST.sentences.length;
-  $("#counter").textContent = (n? (ST.idx+1):0) + " / " + n;
+  const n = ST.sentences.length, el = $("#counter");
+  if(el){
+    el.innerHTML = (n ? (ST.idx + 1) : 0) + " / " + n +
+                   "<b>" + (n ? fmtTime(estSeconds(ST.idx)) : "0:00") + "</b>";
+  }
   $("#barFill").style.width = (n? ((ST.idx)/(n))*100 : 0) + "%";
 }
 
@@ -5601,6 +5665,7 @@ function applySpeed(){
   catch(e){}
   /* nothing to undo here in v3: the word pause never touches playbackRate,
      so this is the only place in the app that sets it. */
+  try{ updateCounter(); }catch(e){}
 }
 function applyVolume(){
   $("#volVal").textContent = ST.volume+"%"; $("#volRange").value = ST.volume;
@@ -5611,10 +5676,12 @@ function applyVolume(){
 function applyGap(){
   const t = ST.gap.toFixed(2);
   setText("#gapVal", t); setText("#gapNum", t); setText("#gapNum2", t);
+  try{ updateCounter(); }catch(e){}
 }
 function applyWgap(){
   const t = ST.wgap.toFixed(2);
   setText("#wgapVal", t); setText("#wgapNum", t); setText("#wgapNum2", t);
+  try{ updateCounter(); }catch(e){}
 }
 function applySize(){
   const fs = 13 + ST.size*2;                 // 15..41 px
@@ -5940,6 +6007,8 @@ function exportText(tid){
 }
 
 function updatePasteHint(){
+  { const b=$("#pasteBox");
+    if(b) b.classList.toggle("port", !(b.value||"").trim()); }
   const n = $("#pasteBox").value.length;
   $("#pasteHint").textContent = n ? (n+" chars") : "";
 }
@@ -5985,8 +6054,28 @@ function holdRepeat(btn, fn){
 function bind(){
   $("#readBtn").onclick = readPasted;
   $("#clearBtn").onclick = ()=>{ $("#pasteBox").value=""; updatePasteHint(); };
-  { const rx=$("#resetX"); if(rx) rx.onclick = doneReset; }
   $("#pasteBox").addEventListener("input", updatePasteHint);
+
+  /* Pressing the time clears the session and puts it back to zero. Nothing is
+     lost by it: every text that was read is already in the Archive below. */
+  { const clearIt = ()=>{ doneReset(); toast("Cleared. The text is in your Archive."); };
+    const a=$("#counter"), b=$("#offCounter");
+    if(a) a.onclick = clearIt;
+    if(b) b.onclick = clearIt;
+  }
+
+  /* The empty box IS the paste button. A tap on it, when there is nothing in
+     it, takes the clipboard and starts reading, and the keyboard is kept out
+     of the way because typing was plainly not the intention. Once there is
+     text in the box it behaves like any other box again. */
+  { const box=$("#pasteBox");
+    if(box) box.addEventListener("click", (e)=>{
+      if((box.value||"").trim()) return;         /* has text: leave it alone */
+      e.preventDefault();
+      try{ box.blur(); }catch(_){}
+      pasteFromClipboard();
+    });
+  }
 
   $("#playBtn").onclick = togglePlay;
   bindSwipe($("#doc"), prev, next);
@@ -6587,7 +6676,16 @@ function offFollow(){
   OFF.raf=requestAnimationFrame(offFollow);
 }
 function offUpdateCounter(){
-  $("#offCounter").textContent=(OFF.sents.length?(OFF.idx+1):0)+" / "+OFF.sents.length;
+  { const el=$("#offCounter"), n=OFF.sents.length;
+    if(el){
+      /* offline clips are already on disk but their lengths are not read
+         until played, so this is the plain estimate */
+      let sec=0; const sp=Math.max(0.25, ST.speed||1);
+      for(let i=OFF.idx; i<n; i++) sec += ((OFF.sents[i]||"").length/14.5)/sp;
+      sec += Math.max(0, n-OFF.idx-1)*(ST.gap||0);
+      el.innerHTML = (n?(OFF.idx+1):0) + " / " + n +
+                     "<b>" + (n? fmtTime(Math.max(0,sec)) : "0:00") + "</b>";
+    } }
 }
 function offSetPlayIcon(on){ $("#offPlay").innerHTML = on ? ICON_PAUSE : ICON_PLAY;
   audioState(on); }
