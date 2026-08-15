@@ -2907,41 +2907,122 @@ def _sp_payload(accent, refresh=False):
             "error": err or _sp_err}
 
 
+# ---------- reaching the rest of the phone ----------
+# A page in a browser cannot touch another app, and neither can Termux by
+# itself: Android only accepts a media command from a process holding shell
+# privileges. There are two ways to get those without root, both of which the
+# phone's own Developer options provide, and both of which need doing once per
+# reboot rather than once per lifetime:
+#
+#   Shizuku   an app that holds an ADB-started service and lends it out. Its
+#             `rish` shell runs anything at shell privilege. Best route: it
+#             survives Wi-Fi changes because the service is already running.
+#
+#   self-ADB  Termux's own adb connecting to the phone it is running on, over
+#             Wireless debugging. Inside Termux the address is always
+#             127.0.0.1, so only the port matters.
+#
+# Rather than guess which one this phone has, try them in order and remember
+# whichever answers. `cmd media_session dispatch` is preferred over a key
+# press everywhere it exists, because it speaks to the media session itself
+# instead of throwing a key at whatever happens to be listening.
+MK_DISPATCH = {"play": "play", "pause": "pause", "toggle": "play-pause",
+               "next": "next", "previous": "previous", "stop": "stop"}
+MK_KEYCODE = {"play": "126", "pause": "127", "toggle": "85",
+              "next": "87", "previous": "88", "stop": "86"}
+_mk_route = None                 # the one that worked, remembered for the session
+
+
+def _mk_ok(p):
+    """Exit zero is not enough. A denied `cmd` still exits zero on some builds
+    and prints the refusal instead, so read what came back."""
+    if p.returncode != 0:
+        return False
+    blob = ((p.stdout or b"") + (p.stderr or b"")).decode("utf-8", "replace").lower()
+    for bad in ("exception", "permission deni", "security", "not allowed",
+                "error:", "no devices", "device unauthorized", "must be root"):
+        if bad in blob:
+            return False
+    return True
+
+
+def _mk_routes(action):
+    d = MK_DISPATCH.get(action, "play")
+    k = MK_KEYCODE.get(action, "126")
+    return [
+        ("shizuku",  ["rish", "-c", "cmd media_session dispatch %s" % d]),
+        ("adb",      ["adb", "shell", "cmd", "media_session", "dispatch", d]),
+        ("adb-old",  ["adb", "shell", "media", "dispatch", d]),
+        ("shell",    ["cmd", "media_session", "dispatch", d]),
+        ("shizuku-key", ["rish", "-c", "input keyevent %s" % k]),
+        ("adb-key",  ["adb", "shell", "input", "keyevent", k]),
+        ("input",    ["input", "keyevent", k]),
+    ]
+
+
+def _mk_try(name, argv):
+    try:
+        p = subprocess.run(argv, capture_output=True, timeout=8)
+        return _mk_ok(p), None
+    except FileNotFoundError:
+        return False, "not installed"
+    except subprocess.TimeoutExpired:
+        return False, "timed out"
+    except Exception as e:
+        return False, str(e)[:40]
+
+
 @app.route("/api/mediakey", methods=["POST"])
 def api_mediakey():
-    """Ask Android to press a media button on whatever else is playing.
+    """Send one media command to whatever else is playing.
 
-    Half of what Marko wants happens by itself: the moment this app plays a
-    clip, Android hands it the audio focus and whatever was playing stops
-    dead, no fade, which is exactly the behaviour asked for. The other half,
-    starting the music again afterwards, is NOT something a web page can do.
-    A page has no way to reach into another app.
-
-    A media key is the one route that exists, and Android guards it: the key
-    is only accepted from a process holding shell privileges. On a rooted
-    phone, or one where ADB has granted it, this works. Everywhere else it
-    fails cleanly and the app says so once and stops asking.
-
-    126 is MEDIA_PLAY rather than 85, MEDIA_PLAY_PAUSE, on purpose. PLAY can
-    only ever start something. A toggle would pause the music if the player
-    had already resumed on its own, which is the opposite of the point."""
+    Half of this was always free: the moment this app speaks, Android hands it
+    the audio focus and the other player stops, no fade. This route is the
+    other half, starting it again, which needs a privileged shell."""
+    global _mk_route
     data = request.get_json(force=True, silent=True) or {}
-    code = {"play": "126", "pause": "127"}.get(str(data.get("key", "play")), "126")
+    action = str(data.get("key", "play"))
+    if action not in MK_DISPATCH:
+        action = "play"
+    routes = _mk_routes(action)
+
+    # the remembered winner first, so the steady state is one process, not seven
+    if _mk_route:
+        for name, argv in routes:
+            if name == _mk_route:
+                ok, _ = _mk_try(name, argv)
+                if ok:
+                    return jsonify({"ok": True, "route": name})
+                _mk_route = None           # it stopped working, walk again
+                break
+
     tried = []
-    for exe in ("input", "/system/bin/input"):
-        try:
-            p = subprocess.run([exe, "keyevent", code],
-                               capture_output=True, timeout=4)
-            tried.append("%s exit %d" % (exe, p.returncode))
-            if p.returncode == 0:
-                return jsonify({"ok": True, "how": exe, "code": code})
-        except FileNotFoundError:
-            tried.append("%s not found" % exe)
-        except Exception as e:
-            tried.append("%s %s" % (exe, str(e)[:40]))
+    for name, argv in routes:
+        ok, why = _mk_try(name, argv)
+        tried.append("%s: %s" % (name, "ok" if ok else (why or "refused")))
+        if ok:
+            _mk_route = name
+            return jsonify({"ok": True, "route": name, "tried": tried})
     return jsonify({"ok": False, "tried": tried,
-                    "error": "Android would not accept a media key from Termux. "
-                             "That needs root, or ADB to grant it."})
+                    "error": "No privileged route. Run maread-adb in Termux to "
+                             "set one up, then try again."})
+
+
+@app.route("/api/mediastatus")
+def api_mediastatus():
+    """What is available on this phone, without sending anything."""
+    out = {"route": _mk_route, "have": {}}
+    for exe in ("rish", "adb"):
+        out["have"][exe] = bool(shutil.which(exe))
+    if out["have"].get("adb"):
+        try:
+            p = subprocess.run(["adb", "devices"], capture_output=True, timeout=8)
+            body = (p.stdout or b"").decode("utf-8", "replace")
+            out["adbDevices"] = [l.split()[0] for l in body.splitlines()[1:]
+                                 if l.strip() and "device" in l]
+        except Exception:
+            out["adbDevices"] = []
+    return jsonify(out)
 
 
 @app.route("/api/speechify/status")
@@ -4495,16 +4576,21 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     <div class="langhint"><b>Resume my music.</b> When this app speaks, Android
       hands it the audio focus and whatever else was playing stops at once, no
       fade, nothing to configure. That half is free.
-      <br><br>Starting your music again afterwards is not free, because a page
-      in a browser has no way to reach into another app. The one door Android
-      leaves open is a media button, and it only accepts one from a process
-      with shell privileges. On a rooted phone, or one where ADB has granted
-      it, this works and your bhajan comes back the instant you press pause.
-      Everywhere else Android refuses, and then this switch turns itself off
-      rather than asking again on every pause. Press Test to find out which
-      phone you have, it takes one second and tells you plainly.
-      <br><br>It sends PLAY, never a play/pause toggle, so if your music
-      player already came back on its own this cannot knock it out again.</div>
+      <br><br>Starting your music again afterwards is not free. A page in a
+      browser cannot reach into another app, and neither can Termux by itself:
+      Android only accepts a media command from a process holding shell
+      privileges. Developer options can grant those without root, in two ways,
+      and either one needs doing once per reboot.
+      <br><br>Run <b>maread-adb</b> in Termux to set it up. It looks for
+      Shizuku first, then for Termux's own ADB over Wireless debugging, and
+      tells you which one your phone will accept. Then press Test here.
+      <br><br>Once a route works it is remembered, so a pause costs one small
+      command rather than a search. If the route later breaks, a Wi-Fi change
+      or a reboot, the search runs again by itself and this switch turns off
+      quietly rather than asking on every pause.
+      <br><br>It sends the media session a real PLAY, not a play/pause toggle,
+      so if your player already came back on its own this cannot knock it out
+      again.</div>
     <div class="langhint">Swiping across the text moves a sentence. Normally
       you drag right to bring the next sentence in, the way a page turns.
       Reverse swipe flips that if the other way round feels right to you.</div>
@@ -6165,8 +6251,8 @@ function bind(){
     if(b) b.onclick = ()=>{
       toast("Asking Android\u2026");
       mediaKey("play", true).then(d=>{
-        if(d.ok) toast("Android accepted it. This phone can do it.");
-        else toast("Android refused: this needs root or ADB.");
+        if(d.ok) toast("Working, via " + (d.route || "a shell") + ".");
+        else toast("No route yet. Run maread-adb in Termux.");
       });
     };
   }
@@ -7158,9 +7244,100 @@ bash "$TMP/$FILE" "$MODE"
 UPDEOF
 chmod +x "$BIN/maread-update"
 
+# ---------------------------------------------------------- maread-adb -----
+# Opens a privileged shell for the media commands. Menu driven, one keypress,
+# no switches to remember.
+cat > "$BIN/maread-adb" << 'ADBEOF'
+#!/data/data/com.termux/files/usr/bin/bash
+# Give MA Reader a way to press play on your music again.
+A='\033[38;5;214m'; G='\033[38;5;114m'; R='\033[38;5;203m'; D='\033[38;5;245m'; O='\033[0m'
+say(){ printf "$1%s$O\n" "$2"; }
+
+test_media(){
+  if command -v rish >/dev/null 2>&1 && \
+     rish -c 'cmd media_session dispatch play' >/dev/null 2>&1; then
+    say "$G" "  Shizuku works. Nothing else to do."; return 0; fi
+  if command -v adb >/dev/null 2>&1 && \
+     adb shell cmd media_session dispatch play >/dev/null 2>&1; then
+    say "$G" "  ADB works. Nothing else to do."; return 0; fi
+  return 1
+}
+
+do_connect(){
+  command -v adb >/dev/null 2>&1 || { say "$A" "  installing android-tools"; pkg install -y android-tools >/dev/null 2>&1; }
+  say "$A" "  looking for Wireless debugging on this phone"
+  PORT="$(adb mdns services 2>/dev/null | grep _adb-tls-connect | head -1 | sed -E 's/.*:([0-9]+).*/\1/')"
+  if [ -z "$PORT" ]; then
+    echo ""
+    say "$D" "  I could not find it by myself. Open:"
+    say "$D" "    Settings, Developer options, Wireless debugging"
+    say "$D" "  and leave it ON. It shows 'IP address & Port'."
+    printf "  Type just the port number: "; read -r PORT
+  fi
+  [ -z "$PORT" ] && { say "$R" "  no port, nothing done"; return 1; }
+  say "$A" "  connecting to 127.0.0.1:$PORT"
+  adb connect "127.0.0.1:$PORT" || true
+  sleep 1
+  if test_media; then return 0; fi
+  say "$R" "  connected but the media command was refused."
+  say "$D" "  If this phone has never been paired, choose P below first."
+  return 1
+}
+
+do_pair(){
+  command -v adb >/dev/null 2>&1 || pkg install -y android-tools >/dev/null 2>&1
+  echo ""
+  say "$D" "  On the phone open:"
+  say "$D" "    Settings, Developer options, Wireless debugging,"
+  say "$D" "    then 'Pair device with pairing code'."
+  say "$D" "  Keep that window open. Use split screen if you can, because"
+  say "$D" "  Android throws the pairing away when the dialog closes."
+  echo ""
+  printf "  Pairing PORT (the one in the pairing window): "; read -r PP
+  printf "  Six digit CODE: "; read -r CODE
+  [ -z "$PP" ] || [ -z "$CODE" ] && { say "$R" "  nothing entered"; return 1; }
+  adb pair "127.0.0.1:$PP" "$CODE" && say "$G" "  paired" || { say "$R" "  pairing failed"; return 1; }
+  do_connect
+}
+
+do_status(){
+  echo ""
+  command -v rish >/dev/null 2>&1 && say "$G" "  rish  present (Shizuku)" || say "$D" "  rish  not installed"
+  command -v adb  >/dev/null 2>&1 && say "$G" "  adb   present" || say "$D" "  adb   not installed"
+  command -v adb  >/dev/null 2>&1 && { echo ""; adb devices | sed 's/^/    /'; }
+  echo ""
+  if test_media; then :; else say "$R" "  no privileged route right now"; fi
+}
+
+while :; do
+  echo ""
+  say "$A" "  MA READER, media control setup"
+  echo ""
+  say "$D" "  Android only lets a shell press play on another app. Two ways in,"
+  say "$D" "  both from Developer options, both needed once per reboot."
+  echo ""
+  echo "    [C] connect and test   (Wireless debugging is ON)"
+  echo "    [P] pair first         (never paired on this phone)"
+  echo "    [S] what do I have"
+  echo "    [Q] quit"
+  echo ""
+  printf "  choose: "; read -r K
+  case "$K" in
+    c|C) do_connect ;;
+    p|P) do_pair ;;
+    s|S) do_status ;;
+    q|Q|"") echo ""; break ;;
+    *) say "$R" "  C, P, S or Q" ;;
+  esac
+done
+ADBEOF
+chmod +x "$BIN/maread-adb"
+
 echo ""
 printf '\n   %sinstalled%s   type %smareadweb%s to run it\n' "$B$GREEN" "$OFF" "$KEY" "$OFF"
 printf '   %snext time, one word updates everything:%s %smaread-update%s\n' \
+  "$DIM" "$OFF" "$KEY" "$OFF"
+printf '   %sto let it start your music again:%s %smaread-adb%s\n' \
   "$DIM" "$OFF" "$KEY" "$OFF"
 printf '   %sif the page still looks old, pull down to reload the browser tab%s\n' "$DIM" "$OFF"
 echo "  serves on port 8081 upward, the first free one, across your Wi-Fi"
