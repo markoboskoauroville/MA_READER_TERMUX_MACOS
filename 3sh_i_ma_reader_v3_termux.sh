@@ -2225,7 +2225,7 @@ def ensure_unit(tid, vkey, idx):
 _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
-                  "spSet": 0,
+                  "spSet": 0, "bgResume": False,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
                   "wordhl": True, "wordoffsets": {}, "swipeRev": False,
@@ -2905,6 +2905,43 @@ def _sp_payload(accent, refresh=False):
             "using": sp_mask(cur),
             "usingLabel": cur_label,
             "error": err or _sp_err}
+
+
+@app.route("/api/mediakey", methods=["POST"])
+def api_mediakey():
+    """Ask Android to press a media button on whatever else is playing.
+
+    Half of what Marko wants happens by itself: the moment this app plays a
+    clip, Android hands it the audio focus and whatever was playing stops
+    dead, no fade, which is exactly the behaviour asked for. The other half,
+    starting the music again afterwards, is NOT something a web page can do.
+    A page has no way to reach into another app.
+
+    A media key is the one route that exists, and Android guards it: the key
+    is only accepted from a process holding shell privileges. On a rooted
+    phone, or one where ADB has granted it, this works. Everywhere else it
+    fails cleanly and the app says so once and stops asking.
+
+    126 is MEDIA_PLAY rather than 85, MEDIA_PLAY_PAUSE, on purpose. PLAY can
+    only ever start something. A toggle would pause the music if the player
+    had already resumed on its own, which is the opposite of the point."""
+    data = request.get_json(force=True, silent=True) or {}
+    code = {"play": "126", "pause": "127"}.get(str(data.get("key", "play")), "126")
+    tried = []
+    for exe in ("input", "/system/bin/input"):
+        try:
+            p = subprocess.run([exe, "keyevent", code],
+                               capture_output=True, timeout=4)
+            tried.append("%s exit %d" % (exe, p.returncode))
+            if p.returncode == 0:
+                return jsonify({"ok": True, "how": exe, "code": code})
+        except FileNotFoundError:
+            tried.append("%s not found" % exe)
+        except Exception as e:
+            tried.append("%s %s" % (exe, str(e)[:40]))
+    return jsonify({"ok": False, "tried": tried,
+                    "error": "Android would not accept a media key from Termux. "
+                             "That needs root, or ADB to grant it."})
 
 
 @app.route("/api/speechify/status")
@@ -4427,7 +4464,22 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
       <button class="chip" id="swipeTog">Reverse swipe</button>
+      <button class="chip" id="bgResumeTog">Resume my music</button>
+      <button class="chip" id="bgTestBtn">Test it</button>
     </div>
+    <div class="langhint"><b>Resume my music.</b> When this app speaks, Android
+      hands it the audio focus and whatever else was playing stops at once, no
+      fade, nothing to configure. That half is free.
+      <br><br>Starting your music again afterwards is not free, because a page
+      in a browser has no way to reach into another app. The one door Android
+      leaves open is a media button, and it only accepts one from a process
+      with shell privileges. On a rooted phone, or one where ADB has granted
+      it, this works and your bhajan comes back the instant you press pause.
+      Everywhere else Android refuses, and then this switch turns itself off
+      rather than asking again on every pause. Press Test to find out which
+      phone you have, it takes one second and tells you plainly.
+      <br><br>It sends PLAY, never a play/pause toggle, so if your music
+      player already came back on its own this cannot knock it out again.</div>
     <div class="langhint">Swiping across the text moves a sentence. Normally
       you drag right to bring the next sentence in, the way a page turns.
       Reverse swipe flips that if the other way round feels right to you.</div>
@@ -5433,7 +5485,79 @@ function next(){ jumpTo(ST.idx+1, ST.playing); }
 // Tidal-style transport glyphs: filled play triangle, two rounded pause bars
 const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L8.53 4.65A1 1 0 0 0 7 5.5z"/></svg>';
 const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.4" y="4.8" width="3.9" height="14.4" rx="1.95"/><rect x="13.7" y="4.8" width="3.9" height="14.4" rx="1.95"/></svg>';
-function setPlayIcon(on){ $("#playBtn").innerHTML = on ? ICON_PAUSE : ICON_PLAY; }
+function setPlayIcon(on){ $("#playBtn").innerHTML = on ? ICON_PAUSE : ICON_PLAY;
+  audioState(on); }
+
+/* ---------- what the rest of the phone sees ----------
+   Both readers funnel through setPlayIcon and offSetPlayIcon, so this is the
+   one place that knows whether sound is coming out of this app, and it is
+   where everything to do with the rest of the phone belongs.
+
+   Two things happen here. The media session is kept honest, so the lock
+   screen and a headphone button show and control the reader rather than
+   something stale. And when playing stops, the background music can be handed
+   back. See the note on /api/mediakey for why stopping the music is free and
+   starting it again is not. */
+let _bgWas = null, _bgDead = false;
+
+function audioState(on){
+  on = !!on;
+  try{
+    if("mediaSession" in navigator){
+      navigator.mediaSession.playbackState = on ? "playing" : "paused";
+    }
+  }catch(e){}
+  if(_bgWas === on) return;
+  const first = (_bgWas === null);
+  _bgWas = on;
+  /* only on the falling edge, and never on the very first paint */
+  if(!on && !first && ST.bgResume && !_bgDead) mediaKey("play");
+}
+
+function mediaKey(k, quiet){
+  return api("/api/mediakey", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({key: k || "play"})})
+    .then(r=>r.json()).then(d=>{
+      if(!d.ok){
+        /* Ask once. If Android refuses, it will refuse every time, and a
+           toast on every pause would be its own kind of torture. */
+        _bgDead = true;
+        if(ST.bgResume){ ST.bgResume = false; refreshToggles(); persist(); }
+        if(!quiet) toast("Android refused the media key. Turned off.");
+      } else if(!quiet){
+        toast("Sent.");
+      }
+      return d;
+    }).catch(()=>({ok:false, error:"could not reach the server"}));
+}
+
+function mediaSetup(){
+  if(!("mediaSession" in navigator)) return;
+  const ms = navigator.mediaSession;
+  const bind = (name, fn)=>{ try{ ms.setActionHandler(name, fn); }catch(e){} };
+  /* Whichever reader is actually sounding is the one a headphone button
+     drives. Falling back to which view is open would be wrong: the offline
+     reader can be playing while its list is on screen. */
+  const offOpen = ()=> OFF.playing ||
+    (!ST.playing && !$("#offlineReaderView").classList.contains("hidden"));
+  bind("play",  ()=> offOpen() ? offToggle() : togglePlay());
+  bind("pause", ()=> offOpen() ? offToggle() : togglePlay());
+  bind("previoustrack", ()=> offOpen() ? offPrev() : prev());
+  bind("nexttrack",     ()=> offOpen() ? offNext() : next());
+  bind("stop", ()=>{ try{ stop(); }catch(e){} try{ stopOffline(); }catch(e){} });
+}
+
+function mediaTitle(t, sub){
+  if(!("mediaSession" in navigator)) return;
+  try{
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: (t || "MA Reader").slice(0, 90),
+      artist: sub || "MA Reader",
+      album: "MA Reader"
+    });
+  }catch(e){}
+}
 function setText(sel, t){ const e=$(sel); if(e) e.textContent = t; }
 function applySpeed(){
   const t = ST.speed.toFixed(2);
@@ -5569,6 +5693,7 @@ function step(kind, d){
 
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
+  { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
   $("#focusTog").classList.toggle("on", ST.focus);
@@ -5799,7 +5924,7 @@ function persist(){
         wordoffsets:ST.wordoffsets, aimeta:ST.aimeta,
         resume:ST.resume, swipeRev:ST.swipeRev,
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
-        spSet:ST.spSet||0,
+        spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
   }, 250);
 }
@@ -5897,6 +6022,23 @@ function bind(){
     ST.volume = parseInt(e.target.value,10); applyVolume(); persist();
   });
 
+  { const b=$("#bgResumeTog");
+    if(b) b.onclick = ()=>{
+      ST.bgResume = !ST.bgResume;
+      if(ST.bgResume) _bgDead = false;      /* a fresh chance after a refusal */
+      refreshToggles(); persist();
+      toast(ST.bgResume ? "Your music will be asked to resume" : "Left alone");
+    };
+  }
+  { const b=$("#bgTestBtn");
+    if(b) b.onclick = ()=>{
+      toast("Asking Android\u2026");
+      mediaKey("play", true).then(d=>{
+        if(d.ok) toast("Android accepted it. This phone can do it.");
+        else toast("Android refused: this needs root or ADB.");
+      });
+    };
+  }
   $("#autoplayTog").onclick = ()=>{ ST.autoplay=!ST.autoplay; refreshToggles(); persist(); };
   { const sw=$("#swipeTog"); if(sw) sw.onclick = ()=>{ ST.swipeRev=!ST.swipeRev;
       refreshToggles(); persist();
@@ -6405,7 +6547,8 @@ function offFollow(){
 function offUpdateCounter(){
   $("#offCounter").textContent=(OFF.sents.length?(OFF.idx+1):0)+" / "+OFF.sents.length;
 }
-function offSetPlayIcon(on){ $("#offPlay").innerHTML = on ? ICON_PAUSE : ICON_PLAY; }
+function offSetPlayIcon(on){ $("#offPlay").innerHTML = on ? ICON_PAUSE : ICON_PLAY;
+  audioState(on); }
 function setOffStatus(s){ $("#offStatus").textContent=s||""; }
 
 /* Light up the whole sentence FIRST, then load and play its clip. */
@@ -6620,6 +6763,7 @@ function boot(){
     ST.spAccent = (st.spAccent === "us") ? "us" : "uk";
     ST.spVkey  = st.spVkey || "";
     ST.spSet   = Math.max(0, st.spSet | 0);
+    ST.bgResume = !!st.bgResume;
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
             if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
@@ -6668,7 +6812,7 @@ function boot(){
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
-    renderSpDead();
+    renderSpDead(); mediaSetup();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
