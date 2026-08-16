@@ -2226,6 +2226,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
+                  "tapPaste": True,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
                   "wordhl": True, "wordoffsets": {}, "swipeRev": False,
@@ -4171,6 +4172,26 @@ body.hassession .tab.player{display:block}
 .deadbtn:active{color:var(--text)}
 .spstate b{color:var(--text); font-weight:600}
 .spstate.bad{color:#f87171}
+/* the fullscreen pair: a button on the player strip to go in, and a faint
+   one in the corner to come back out, which is the only thing on screen once
+   everything else has gone */
+.fsbtn{flex:0 0 auto; width:38px; height:32px; border:1px solid var(--line);
+  background:var(--panel); color:var(--dim); border-radius:9px; padding:0;
+  display:flex; align-items:center; justify-content:center}
+.fsbtn svg{width:17px; height:17px; display:block}
+.fsbtn:active{color:var(--text); border-color:var(--tune)}
+.fsout{position:fixed; z-index:60; display:none;
+  top:calc(8px + env(safe-area-inset-top)); right:10px;
+  width:44px; height:44px; border:none; border-radius:50%;
+  background:rgba(127,127,127,.13); color:var(--dim);
+  align-items:center; justify-content:center; padding:0}
+.fsout svg{width:20px; height:20px; display:block}
+.fsout:active{background:rgba(127,127,127,.26); color:var(--text)}
+body.fullread .fsout{display:flex}
+/* while the text is a paste target, say so with the cursor and kill the
+   text selection that a tap would otherwise start */
+body.tappaste .doc, body.tappaste #offDoc{cursor:copy;
+  -webkit-user-select:none; user-select:none}
 body.fullread header, body.fullread .controls, body.fullread .off-controls,
 body.fullread .gear-corner{display:none !important}
 body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
@@ -4224,6 +4245,7 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     </div>
     <div class="controls off-controls">
       <div class="progress">
+        <button class="fsbtn" id="fsBtn" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
         <div class="bar"><i id="barFill"></i></div>
         <button class="counter" id="counter"
           title="How much is left. Press to clear and start again.">0 / 0</button>
@@ -4278,6 +4300,7 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     </div>
     <div class="controls off-controls">
       <div class="progress">
+        <button class="fsbtn" id="offFsBtn" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
         <input type="range" id="offSeek" class="seek" min="0" max="1000" value="0">
         <button class="counter" id="offCounter"
           title="How much is left. Press to clear and start again.">0 / 0</button>
@@ -4570,9 +4593,21 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
       <button class="chip" id="swipeTog">Reverse swipe</button>
+      <button class="chip" id="tapPasteTog">Tap text to paste</button>
       <button class="chip" id="bgResumeTog">Resume my music</button>
       <button class="chip" id="bgTestBtn">Test it</button>
     </div>
+    <div class="langhint"><b>Tap text to paste.</b> On by default, and it is
+      the whole point of the app for anyone reading one article after another.
+      A tap anywhere on the text being read asks for the clipboard; Android
+      shows its Paste button; you press it and the new text replaces the old
+      one and starts speaking. One finger, two presses, no menus.
+      <br><br>It costs the old tap gestures, which is why it is a switch.
+      While it is on, tapping a sentence no longer jumps to it and the double
+      tap in the middle no longer opens full screen, because a tap cannot mean
+      three things at once. Play and pause live on the player, full screen has
+      its own button beside the progress bar, and swiping still steps a
+      sentence at a time. Turn it off to have the old taps back.</div>
     <div class="langhint"><b>Resume my music.</b> When this app speaks, Android
       hands it the audio focus and whatever else was playing stops at once, no
       fade, nothing to configure. That half is free.
@@ -4705,6 +4740,11 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
   </div>
 </div>
 
+<button class="fsout" id="fsOut" title="Leave full screen">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 9h3a2 2 0 0 0 2-2V4M20 9h-3a2 2 0 0 1-2-2V4M4 15h3a2 2 0 0 1 2 2v3M20 15h-3a2 2 0 0 0-2 2v3"/>
+  </svg></button>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -4803,7 +4843,7 @@ const ST = {
   /* v3: two engines. Edge is the free Microsoft one this app started on;
      Speechify is keyed, English only, and brings its own word timings. */
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
-  spSet: 0, spPerSet: 4, bothEngines: false,
+  spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -5200,6 +5240,7 @@ function renderDoc(){
        so it is filtered out first. */
     span.onclick = ()=>{
       if(swipedJustNow()) return;
+      if(ST.tapPaste) return;        /* the text is a paste target now */
       if(i === ST.idx) togglePlay(); else jumpTo(i, true);
     };
     doc.appendChild(span);
@@ -5880,6 +5921,8 @@ function step(kind, d){
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
   { const b=$("#bothTog"); if(b) b.classList.toggle("on", !!ST.bothEngines); }
+  { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
+  document.body.classList.toggle("tappaste", !!ST.tapPaste);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
@@ -6114,7 +6157,7 @@ function persist(){
         resume:ST.resume, swipeRev:ST.swipeRev,
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
-        bothEngines:!!ST.bothEngines,
+        bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
   }, 250);
 }
@@ -6232,6 +6275,19 @@ function bind(){
     ST.volume = parseInt(e.target.value,10); applyVolume(); persist();
   });
 
+  { const b=$("#fsBtn"), o=$("#offFsBtn"), x=$("#fsOut");
+    if(b) b.onclick = enterFull;
+    if(o) o.onclick = enterFull;
+    if(x) x.onclick = leaveFull;
+  }
+  { const b=$("#tapPasteTog");
+    if(b) b.onclick = ()=>{
+      ST.tapPaste = !ST.tapPaste;
+      refreshToggles(); persist();
+      toast(ST.tapPaste ? "Tap the text to paste the next one"
+                        : "Tap a sentence to read from it");
+    };
+  }
   { const b=$("#bothTog");
     if(b) b.onclick = ()=>{
       ST.bothEngines = !ST.bothEngines;
@@ -6360,6 +6416,11 @@ function jumpToPlayer(){
 function setFullread(on){
   document.body.classList.toggle("fullread", !!on);
 }
+/* The button pair. Unlike the old double tap, these only change what is on
+   screen: they never start or stop the voice, because that lives on the
+   player and one thing should do one thing. */
+function enterFull(){ setFullread(true); }
+function leaveFull(){ setFullread(false); }
 function isFullread(){ return document.body.classList.contains("fullread"); }
 /* The gesture that opens the book also closes it. A double tap in the middle
    of the page strips away every control and starts speaking; a double tap in
@@ -6391,6 +6452,15 @@ function wireCenterTaps(scrollSel, isOffline){
   let tapT=null;
   sc.addEventListener("click", (e)=>{
     if(swipedJustNow()) return;
+    /* One finger, straight to the next article. A tap on the text asks for
+       the clipboard, Android offers its Paste button, and what comes back
+       replaces everything and starts speaking. Nothing else may claim a tap
+       while this is on, or the gesture would mean three things at once. */
+    if(ST.tapPaste){
+      e.stopPropagation(); e.preventDefault();
+      pasteFromClipboard();
+      return;
+    }
     const full = isFullread();
     const inZ  = inCenterZone(e.clientX, e.clientY);
     if(!full && !inZ) return;       /* ordinary tap: let the sentence handle it */
@@ -6991,6 +7061,7 @@ function boot(){
     ST.spSet   = Math.max(0, st.spSet | 0);
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
+    ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
             if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
