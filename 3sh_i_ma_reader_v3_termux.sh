@@ -2226,7 +2226,8 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
-                  "tapPaste": True,
+                  "tapPaste": True, "floatPaste": True,
+                  "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
                   "wordhl": True, "wordoffsets": {}, "swipeRev": False,
@@ -4180,6 +4181,38 @@ body.hassession .tab.player{display:block}
   display:flex; align-items:center; justify-content:center}
 .fsbtn svg{width:17px; height:17px; display:block}
 .fsbtn:active{color:var(--text); border-color:var(--tune)}
+/* ---------- the floating P ----------
+   Dragged anywhere, pressed to paste. It sits above everything because the
+   whole point is that it is reachable without looking for it. */
+.floatp{position:fixed; z-index:70; width:56px; height:56px; border-radius:50%;
+  border:1px solid var(--line); background:var(--panel); color:var(--text);
+  font-size:23px; font-weight:600; line-height:1; padding:0; display:none;
+  align-items:center; justify-content:center; touch-action:none;
+  box-shadow:0 3px 14px rgba(0,0,0,.45); opacity:.88}
+body.hasfloat .floatp{display:flex}
+.floatp:active{border-color:var(--tune); opacity:1}
+.floatp.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
+
+/* The catcher. Some browsers will not hand a page the clipboard at all, and
+   no amount of asking changes that. So when the quick way is refused, this
+   opens: a real text field, already focused, that the phone will happily
+   paste into by long press or by a keyboard. The moment anything lands in it
+   the reading starts, so it costs one extra press and never a typed word. */
+.catchwrap{position:fixed; inset:0; z-index:90; display:none;
+  background:rgba(0,0,0,.62); align-items:center; justify-content:center;
+  padding:18px}
+.catchwrap.on{display:flex}
+.catchbox{width:100%; max-width:520px; background:var(--panel);
+  border:1px solid var(--line); border-radius:16px; padding:15px}
+.catchbox h4{margin:0 0 4px; font-size:16px; color:var(--text)}
+.catchbox p{margin:0 0 11px; font-size:12.5px; color:var(--faint); line-height:1.5}
+.catchbox textarea{width:100%; min-height:110px; border-radius:11px;
+  border:2px dashed var(--tune); background:var(--bg); color:var(--text);
+  padding:11px; font-size:15px; line-height:1.4}
+.catchrow{display:flex; gap:8px; margin-top:10px}
+.catchrow button{flex:1; border:1px solid var(--line); background:transparent;
+  color:var(--dim); border-radius:11px; padding:11px; font-size:14px}
+.catchrow button.go{color:var(--text); border-color:var(--tune)}
 .fsout{position:fixed; z-index:60; display:none;
   top:calc(8px + env(safe-area-inset-top)); right:10px;
   width:44px; height:44px; border:none; border-radius:50%;
@@ -4593,11 +4626,20 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
       <button class="chip" id="swipeTog">Reverse swipe</button>
+      <button class="chip" id="floatTog">Floating paste button</button>
       <button class="chip" id="tapPasteTog">Tap text to paste</button>
       <button class="chip" id="bgResumeTog">Resume my music</button>
       <button class="chip" id="bgTestBtn">Test it</button>
     </div>
-    <div class="langhint"><b>Tap text to paste.</b> On by default, and it is
+    <div class="langhint"><b>Floating paste button.</b> A round P that sits on
+      top of everything. Drag it wherever your thumb lands and it stays there.
+      Press it and the clipboard replaces whatever is loaded and starts reading
+      from the beginning.
+      <br><br>If the browser refuses to hand over the clipboard, and some do,
+      a box opens with the cursor already in it. Long press, choose Paste, and
+      reading starts the moment the text lands. That path works in any browser
+      ever made, because it is just a text field.
+      <br><br><b>Tap text to paste.</b> On by default, and it is
       the whole point of the app for anyone reading one article after another.
       A tap anywhere on the text being read asks for the clipboard; Android
       shows its Paste button; you press it and the new text replaces the old
@@ -4740,6 +4782,21 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
   </div>
 </div>
 
+<button class="floatp" id="floatP" title="Paste and read. Drag to move.">P</button>
+
+<div class="catchwrap" id="catchWrap">
+  <div class="catchbox">
+    <h4>Paste here</h4>
+    <p>This browser will not hand the page your clipboard by itself. Long press
+      the box below and choose Paste, and reading starts the moment it lands.</p>
+    <textarea id="catchBox" placeholder="Long press, then Paste"></textarea>
+    <div class="catchrow">
+      <button id="catchCancel">Cancel</button>
+      <button class="go" id="catchGo">Read it</button>
+    </div>
+  </div>
+</div>
+
 <button class="fsout" id="fsOut" title="Leave full screen">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
        stroke-linecap="round" stroke-linejoin="round">
@@ -4844,6 +4901,7 @@ const ST = {
      Speechify is keyed, English only, and brings its own word timings. */
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
+  floatPaste: true, fpX: 0.82, fpY: 0.72,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -5922,7 +5980,9 @@ function step(kind, d){
 function refreshToggles(){
   { const b=$("#bothTog"); if(b) b.classList.toggle("on", !!ST.bothEngines); }
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
+  { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   document.body.classList.toggle("tappaste", !!ST.tapPaste);
+  document.body.classList.toggle("hasfloat", !!ST.floatPaste);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
@@ -6158,6 +6218,7 @@ function persist(){
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
+        floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
   }, 250);
 }
@@ -6279,6 +6340,25 @@ function bind(){
     if(b) b.onclick = enterFull;
     if(o) o.onclick = enterFull;
     if(x) x.onclick = leaveFull;
+  }
+  { const b=$("#floatTog");
+    if(b) b.onclick = ()=>{
+      ST.floatPaste = !ST.floatPaste;
+      refreshToggles(); persist();
+      if(ST.floatPaste) placeFloat();
+      toast(ST.floatPaste ? "Drag the P anywhere you like" : "Floating button hidden");
+    };
+  }
+  { const c=$("#catchGo"), x=$("#catchCancel"), b=$("#catchBox");
+    if(c) c.onclick = catcherTake;
+    if(x) x.onclick = closeCatcher;
+    if(b){
+      /* the instant something lands, go. No second press. */
+      b.addEventListener("paste", ()=> setTimeout(catcherTake, 30));
+      b.addEventListener("input", ()=>{ if((b.value||"").length > 40) catcherTake(); });
+    }
+    const w=$("#catchWrap");
+    if(w) w.addEventListener("click",(e)=>{ if(e.target===w) closeCatcher(); });
   }
   { const b=$("#tapPasteTog");
     if(b) b.onclick = ()=>{
@@ -6500,19 +6580,106 @@ function readTextNow(text){
       openPayload(j, true);          /* always play: that is the point */
     }).catch(()=>toast("Server error."));
 }
+/* Whatever arrives, from whichever route, ends the same way: it REPLACES
+   what was loaded and starts speaking from the beginning. */
+function acceptPaste(t){
+  if(!t || !t.trim()) return false;
+  const box=$("#pasteBox");
+  if(box){ box.value = t; }
+  if(typeof updatePasteHint==="function") updatePasteHint();
+  readTextNow(t);
+  return true;
+}
+
+/* The catcher: the path that cannot fail, because it is only a text field.
+   Opened whenever the quick way is refused. */
+function openCatcher(){
+  const w=$("#catchWrap"), b=$("#catchBox");
+  if(!w || !b) { toast("Paste into the box on the Read tab."); return; }
+  b.value = "";
+  w.classList.add("on");
+  setTimeout(()=>{ try{ b.focus(); }catch(e){} }, 40);
+}
+function closeCatcher(){
+  const w=$("#catchWrap"); if(w) w.classList.remove("on");
+  const b=$("#catchBox"); if(b){ try{ b.blur(); }catch(e){} }
+}
+function catcherTake(){
+  const b=$("#catchBox"); if(!b) return;
+  const t=b.value;
+  if(!t || !t.trim()){ toast("Nothing there yet."); return; }
+  closeCatcher(); acceptPaste(t);
+}
+
+/* One press, the quick way first. If the browser will not give up the
+   clipboard, fall through to the catcher instead of shrugging. */
 function pasteFromClipboard(){
-  if(!(navigator.clipboard&&navigator.clipboard.readText)){
-    toast("Clipboard blocked. Click the box and paste by hand, then Read.");
-    $("#pasteBox").focus(); return;
+  if(!(navigator.clipboard && navigator.clipboard.readText)){
+    openCatcher(); return;
   }
-  navigator.clipboard.readText().then(t=>{
-    if(!t || !t.trim()){ toast("Clipboard is empty."); return; }
-    const box=$("#pasteBox");
-    box.value = t;                   /* replace, never append */
-    if(typeof updatePasteHint==="function") updatePasteHint();
-    readTextNow(t);
-  }).catch(()=>{ toast("Clipboard blocked. Click the box and paste by hand.");
-    $("#pasteBox").focus(); });
+  let settled = false;
+  const fallback = ()=>{ if(!settled){ settled = true; openCatcher(); } };
+  try{
+    navigator.clipboard.readText().then(t=>{
+      if(settled) return;
+      settled = true;
+      if(!acceptPaste(t)) openCatcher();
+    }).catch(fallback);
+  }catch(e){ fallback(); return; }
+  /* Some browsers neither resolve nor reject: they simply never answer,
+     which is what makes a press feel like nothing happened at all. */
+  setTimeout(fallback, 1200);
+}
+
+/* ---------- the floating P ---------- */
+function clampFloat(x, y){
+  const el=$("#floatP"); const s=(el&&el.offsetWidth)||56;
+  const w=window.innerWidth, h=window.innerHeight;
+  return [Math.max(4, Math.min(w-s-4, x)), Math.max(4, Math.min(h-s-4, y))];
+}
+function placeFloat(){
+  const el=$("#floatP"); if(!el) return;
+  const w=window.innerWidth, h=window.innerHeight;
+  const fx=(typeof ST.fpX==="number")?ST.fpX:0.82, fy=(typeof ST.fpY==="number")?ST.fpY:0.72;
+  const [x,y]=clampFloat(fx*w, fy*h);
+  el.style.left=x+"px"; el.style.top=y+"px";
+}
+function wireFloat(){
+  const el=$("#floatP"); if(!el) return;
+  let sx=0, sy=0, ox=0, oy=0, moved=false, id=null;
+  el.addEventListener("pointerdown",(e)=>{
+    id=e.pointerId; moved=false;
+    sx=e.clientX; sy=e.clientY;
+    const r=el.getBoundingClientRect(); ox=sx-r.left; oy=sy-r.top;
+    try{ el.setPointerCapture(id); }catch(_){}
+    el.classList.add("moving");
+  });
+  el.addEventListener("pointermove",(e)=>{
+    if(id===null || e.pointerId!==id) return;
+    if(!moved && Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy) < 7) return;
+    moved=true;
+    const [x,y]=clampFloat(e.clientX-ox, e.clientY-oy);
+    el.style.left=x+"px"; el.style.top=y+"px";
+  });
+  const done=(e)=>{
+    if(id===null) return;
+    try{ el.releasePointerCapture(id); }catch(_){}
+    id=null; el.classList.remove("moving");
+    if(moved){
+      /* remember where the thumb wants it, as a fraction so it survives a
+         turn of the phone */
+      const r=el.getBoundingClientRect();
+      ST.fpX = r.left/Math.max(1,window.innerWidth);
+      ST.fpY = r.top/Math.max(1,window.innerHeight);
+      persist();
+    } else {
+      pasteFromClipboard();       /* a press, not a drag */
+    }
+  };
+  el.addEventListener("pointerup", done);
+  el.addEventListener("pointercancel", done);
+  window.addEventListener("resize", placeFloat);
+  placeFloat();
 }
 
 /* ================= v3 helpers ================= */
@@ -7062,6 +7229,9 @@ function boot(){
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
+    ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
+    if(typeof st.fpX === "number") ST.fpX = st.fpX;
+    if(typeof st.fpY === "number") ST.fpY = st.fpY;
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
             if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
@@ -7111,7 +7281,7 @@ function boot(){
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
-    renderSpDead(); mediaSetup();
+    renderSpDead(); mediaSetup(); wireFloat();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
