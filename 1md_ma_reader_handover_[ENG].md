@@ -196,6 +196,23 @@ TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
 
+## Where the settings live
+
+One file, ~/.maread-web/web_state.json, in Termux private storage. Nothing
+else on the phone can touch it. Not localStorage, not shared storage, never
+off the device. Carried out and put back on every install, together with its
+.bak and the key files.
+
+Written atomically: temp file, fsync, rename over the top, previous copy kept
+as .bak and used if the main one will not parse. Read back through clamps, so
+a corrupted beacon cannot leave a negative speed behind.
+
+Saved on a 250 ms timer to coalesce a burst, AND flushed by sendBeacon on
+visibilitychange, pagehide and blur. That second half is not optional: on
+Android a backgrounded tab is frozen and the timer never fires, so anything
+changed in the last quarter second before the phone went in a pocket was
+being lost.
+
 ## Every setting
 
 Generated from the shipped page, so it cannot drift. All live in the

@@ -88,6 +88,45 @@ shape and the rejection are both real.
 
 ---
 
+## 2b. Settings are kept, and kept privately
+
+Every setting a person changes is remembered between sessions. Not most of
+them, not usually, all of them and always. A preference that has to be set
+twice is worse than one that was never offered.
+
+WHERE. One file, inside the app's own folder in Termux private storage:
+
+    ~/.maread-web/web_state.json
+
+Nothing else on the phone can read or write it. It is not in shared storage,
+not in the browser, not in localStorage, not in a cloud. It never leaves the
+device. An installer that wipes and reinstalls carries it out and puts it
+back, along with its backup and the key files.
+
+HOW, and the two ways it goes wrong:
+
+    NOT ATOMIC          Opening the file for writing truncates it at once, so
+                        a phone that freezes or is killed mid write leaves
+                        half a file, which parses as nothing, which reads back
+                        as factory defaults. Write a temporary file, fsync it,
+                        rename it over the top. Keep the previous good copy as
+                        .bak and fall back to it.
+
+    A FROZEN TAB        On Android a backgrounded tab is FROZEN and pending
+                        timers never run. A debounced save loses anything
+                        changed in the last moment before the phone went in a
+                        pocket. Flush on visibilitychange, pagehide and blur,
+                        using sendBeacon, which the browser delivers even as
+                        the page is torn down. A plain fetch at that moment is
+                        allowed to be abandoned.
+
+CLAMP EVERYTHING ON THE WAY IN. What arrives came from a browser, and a
+browser can be a corrupted beacon. A negative speed is not a preference, it is
+a broken player. Clamp to the same limits the interface itself uses, or the
+server will quietly disagree with the app about what is legal.
+
+---
+
 ## 3. One spoon at a time
 
 Spoon equals step.

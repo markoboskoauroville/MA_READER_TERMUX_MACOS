@@ -700,7 +700,7 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
 # a single request to rebuild, and carrying a stale one across an update is
 # how the picker got stuck showing four voices out of nine hundred.
-KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json web_state.json browser.txt"
+KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json web_state.json web_state.json.bak browser.txt"
 
 # --------------------------------------------------- is it running already? --
 # A live server holds the old code in memory and keeps serving it after every
@@ -2513,16 +2513,39 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
 
 def load_state():
     st = dict(_DEFAULT_STATE)
-    try:
-        st.update(json.load(open(STATE_FILE, encoding="utf-8")))
-    except Exception:
-        pass
+    got = False
+    for path in (STATE_FILE, STATE_FILE + ".bak"):
+        try:
+            data = json.load(open(path, encoding="utf-8"))
+            if isinstance(data, dict):
+                st.update(data)
+                got = True
+                break
+        except Exception:
+            continue
+    del got
     if not st.get("_wseed4"):           # word highlight is on by default now
         st["wordhl"] = True
         st["_wseed4"] = True
     if not isinstance(st.get("wordoffsets"), dict):
         st["wordoffsets"] = {}
     st["swipeRev"] = bool(st.get("swipeRev"))
+    # Everything that reaches this comes from a browser, and a browser can be
+    # a corrupted beacon or somebody with the console open. A negative speed
+    # is not a preference, it is a broken player.
+    def _num(key, lo, hi, default, nd=2):
+        try:
+            v = round(float(st.get(key, default)), nd)
+        except (TypeError, ValueError):
+            v = default
+        st[key] = max(lo, min(hi, v))
+    # the same limits the player itself uses, or the server would quietly
+    # shrink a size the browser considers perfectly legal
+    _num("speed", 0.5, 3.0, 1.0)
+    _num("volume", 0, 100, 100, 0)
+    _num("size", 1, 14, 2, 0)
+    _num("lineheight", 1.0, 3.0, 1.6)
+    st["volume"] = int(st["volume"]); st["size"] = int(st["size"])
     # v3: the pause between WORDS. It is a real pause of the clip inside the
     # quiet the voice already leaves, so it only ever runs upward from zero:
     # there is no such thing as less silence than the voice recorded. Up to
@@ -2575,10 +2598,28 @@ def load_state():
     return st
 
 def save_state(st):
+    """Write the settings so that being interrupted cannot destroy them.
+
+    Opening the file "w" truncates it immediately, so a phone that freezes or
+    is killed mid-write leaves a half a file, which parses as nothing, which
+    reads back as factory defaults. That is precisely what "my settings are
+    not remembered" looks like. So: write a temporary file, flush it to the
+    disk, and rename it over the top, which is atomic. The previous good copy
+    is kept beside it as .bak for load_state to fall back on."""
     cur = load_state(); cur.update(st or {})
     try:
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-        json.dump(cur, open(STATE_FILE, "w", encoding="utf-8"))
+        tmp = STATE_FILE + ".part"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cur, f)
+            f.flush()
+            os.fsync(f.fileno())
+        if os.path.exists(STATE_FILE):
+            try:
+                shutil.copy2(STATE_FILE, STATE_FILE + ".bak")
+            except Exception:
+                pass
+        os.replace(tmp, STATE_FILE)
     except Exception:
         pass
     return cur
@@ -6776,12 +6817,26 @@ function updatePasteHint(){
 }
 
 /* ---------- persist settings ---------- */
-let persistT=null;
-function persist(){
-  clearTimeout(persistT);
-  persistT = setTimeout(()=>{
-    api("/api/state",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({voice:ST.voice, speed:ST.speed, volume:ST.volume,
+/* ---------- keeping settings ----------
+   The saving was debounced by a quarter second, which is right for a slider
+   being dragged and wrong for everything else, because on Android a tab that
+   goes to the background is FROZEN. Pending timers do not run. Switch away
+   from Chrome, or lock the phone, within that quarter second and the change
+   is simply gone, which is exactly what "my settings are not remembered"
+   looks like from the outside.
+
+   So: the timer still coalesces a burst of changes, but the state is also
+   flushed the moment the page is hidden or closed, and that flush uses
+   sendBeacon, which exists for precisely this and is delivered by the browser
+   even as the page is being torn down. A normal fetch at that moment is
+   allowed to be abandoned; a beacon is not.
+
+   The settings live in one file, ~/.maread-web/web_state.json, inside Termux
+   private storage. Nothing else on the phone can read or write it, and it is
+   carried out and put back whenever the app is reinstalled. */
+let persistT=null, persistDue=null;
+function stateBody(){
+  return JSON.stringify({voice:ST.voice, speed:ST.speed, volume:ST.volume,
         gap:ST.gap, wgap:ST.wgap, loop:ST.loop, size:ST.size, autoplay:ST.autoplay,
         focus:ST.focus, theme:ST.theme, font:ST.font,
         lineheight:ST.lineheight, wordhl:ST.wordhl,
@@ -6795,8 +6850,62 @@ function persist(){
         spPicked:(ST.spPicked||[]),
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
-        enabledLangs:ST.enabledLangs})}).catch(()=>{});
+        enabledLangs:ST.enabledLangs});
+}
+
+/* Send it now, whatever else was pending. */
+function persistNow(){
+  clearTimeout(persistT); persistT = null;
+  const body = stateBody();
+  persistDue = null;
+  return api("/api/state", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: body}).catch(()=>{});
+}
+
+/* The last chance saloon: the page is going away, so use the one transport
+   that is guaranteed to leave. sendBeacon takes a Blob and needs no response,
+   which is why it survives an unload when a fetch does not. */
+function persistBeacon(){
+  if(!persistDue) return;
+  const body = persistDue;
+  persistDue = null;
+  clearTimeout(persistT); persistT = null;
+  try{
+    if(navigator.sendBeacon){
+      const blob = new Blob([body], {type:"application/json"});
+      if(navigator.sendBeacon("/api/state", blob)) return;
+    }
+  }catch(e){}
+  /* no beacon, or it refused: a keepalive fetch is the next best thing */
+  try{
+    fetch("/api/state", {method:"POST", body: body, keepalive: true,
+      headers:{"Content-Type":"application/json"}}).catch(()=>{});
+  }catch(e){}
+}
+
+function persist(){
+  persistDue = stateBody();          /* remember it BEFORE the timer, so a
+                                        freeze cannot lose what was pending */
+  clearTimeout(persistT);
+  persistT = setTimeout(()=>{
+    persistT = null;
+    const body = persistDue; persistDue = null;
+    if(!body) return;
+    api("/api/state",{method:"POST",headers:{"Content-Type":"application/json"},
+      body: body}).catch(()=>{ persistDue = body; });
   }, 250);
+}
+
+/* Every way a phone can take the page away. visibilitychange is the reliable
+   one on Android; pagehide covers the tab actually closing; blur catches the
+   app switcher on some builds. All three are cheap and idempotent. */
+function wirePersistFlush(){
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.visibilityState === "hidden") persistBeacon();
+  });
+  window.addEventListener("pagehide", persistBeacon);
+  window.addEventListener("beforeunload", persistBeacon);
+  window.addEventListener("blur", persistBeacon);
 }
 
 /* ---------- wire up ---------- */
@@ -7004,7 +7113,7 @@ function bind(){
   $("#focusTog").onclick = ()=>{ ST.focus=!ST.focus; refreshToggles(); persist(); };
 
   $("#backdrop").onclick = closeSheet;
-  $("#sheetDone").onclick = ()=>{ stopPreview(); closeSheet(); };
+  $("#sheetDone").onclick = ()=>{ stopPreview(); closeSheet(); persistNow(); };
   document.querySelectorAll("#themeChips .chip").forEach(c=>
     c.onclick = ()=>{ ST.theme=c.dataset.theme; applyTheme(); persist(); });
   document.querySelectorAll("#fontChips .chip").forEach(c=>
@@ -8012,7 +8121,7 @@ function boot(){
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
     renderEdgeGrid(); renderSpKeyList(); renderSpDead();
-    mediaSetup(); wireFloat(); wireFsWatch();
+    mediaSetup(); wireFloat(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
