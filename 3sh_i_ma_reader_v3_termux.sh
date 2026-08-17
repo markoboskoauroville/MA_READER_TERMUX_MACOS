@@ -3182,6 +3182,73 @@ def browser_pref():
     return "auto" if v == "auto" else "chrome"
 
 
+# ---------- hearing a voice before choosing it ----------
+# A name in a list says nothing about what a voice sounds like, and with 963
+# of them that is the whole difficulty. So tapping one in Settings makes it
+# introduce itself.
+#
+# Deliberately NOT routed through the library: a preview is not a text Marko
+# saved and has no business appearing in his Archive. Its own folder, its own
+# cache, one file per voice, made once and kept. Wiped by Forget along with
+# everything else Speechify.
+PREVIEW_DIR = os.path.join(WEB_DIR, "preview")
+PREVIEW_LINE = "This is %s. Hi there."
+
+
+def preview_name(vkey):
+    if vkey in SP_VOICES:
+        return SP_VOICES[vkey]["name"]
+    if vkey in VOICE_BY_VKEY:
+        return VOICE_BY_VKEY[vkey][1]
+    return None
+
+
+@app.route("/api/preview/<vkey>")
+def api_preview(vkey):
+    name = preview_name(vkey)
+    if name is None and vkey.startswith("sp_"):
+        # a Speechify voice from a page the catalogue has not built this run
+        st = load_state()
+        sp_catalogue(st.get("spAccent", "uk"))
+        if vkey not in SP_VOICES:
+            for acc in SP_ACCENT_KEYS:
+                sp_catalogue(acc)
+                if vkey in SP_VOICES:
+                    break
+        name = preview_name(vkey)
+    if name is None:
+        return jsonify({"error": "unknown voice"}), 404
+
+    safe = re.sub(r"[^A-Za-z0-9_]", "", vkey)[:48]
+    if not safe:
+        return jsonify({"error": "bad voice"}), 400
+    mp3 = os.path.join(PREVIEW_DIR, safe + ".mp3")
+    # A fast thumb taps four voices in a second, and without this two requests
+    # for the SAME voice both synthesise into the same path and one of them
+    # serves a half-written file. The article cache has always taken this lock;
+    # the preview simply forgot to, which cost five failures out of ten the
+    # first time it was tested under a real thumb.
+    if not os.path.exists(mp3) or os.path.getsize(mp3) < 400:
+        lk = _lock_for(("preview", safe))
+        with lk:
+            if not os.path.exists(mp3) or os.path.getsize(mp3) < 400:
+                try:
+                    os.makedirs(PREVIEW_DIR, exist_ok=True)
+                except Exception as e:
+                    return jsonify({"error": str(e)}), 500
+                line = PREVIEW_LINE % name
+                js = mp3 + ".json"
+                if vkey in SP_VOICES:
+                    err = synth_unit_speechify(line, SP_VOICES[vkey]["id"], mp3, js)
+                else:
+                    err = synth_unit(line, VOICE_BY_VKEY[vkey][0], mp3, js)
+                if err:
+                    return jsonify({"error": err}), 502
+    resp = send_file(mp3, mimetype="audio/mpeg", conditional=True)
+    resp.headers["Cache-Control"] = "private, max-age=604800"
+    return resp
+
+
 @app.route("/manifest.webmanifest")
 def api_manifest():
     """The only truly bulletproof way to be rid of the browser furniture.
@@ -3354,6 +3421,12 @@ def api_sp_drop():
 @app.route("/api/speechify/forget", methods=["POST"])
 def api_sp_forget():
     global SP_VOICES
+    try:
+        for f in os.listdir(PREVIEW_DIR):
+            if f.startswith("sp_"):
+                os.remove(os.path.join(PREVIEW_DIR, f))
+    except Exception:
+        pass
     for p in (SPEECHIFY_KEY_FILE, SP_CACHE_FILE, SP_FAIL_FILE, SP_USE_FILE):
         try:
             os.remove(p)
@@ -5325,6 +5398,45 @@ function voiceBtn(v){
   b.onclick = ()=> setVoice(v.id);
   return b;
 }
+/* ---------- hearing a voice ----------
+   A name says nothing about a sound. Tapping a voice in Settings has it say
+   its own name, so 963 of them can be told apart by ear rather than by
+   guessing from a word.
+
+   If the reader was speaking, it is paused for the sample and started again
+   afterwards, so a preview never talks over the article and never leaves the
+   reading abandoned halfway. */
+let PREVIEW = null, PREVIEW_WAS = false;
+function stopPreview(){
+  if(!PREVIEW) return;
+  try{ PREVIEW.pause(); }catch(e){}
+  PREVIEW.onended = PREVIEW.onerror = null;
+  PREVIEW = null;
+}
+function previewVoice(v){
+  if(!v || !v.vkey) return;
+  const again = PREVIEW && PREVIEW.dataset && PREVIEW.dataset.vkey === v.vkey;
+  const wasPlaying = PREVIEW ? PREVIEW_WAS : !!ST.playing;
+  stopPreview();
+  if(again) return;                 /* tapping the same one again stops it */
+  PREVIEW_WAS = wasPlaying;
+  if(wasPlaying){ try{ pause(); }catch(e){} }
+  const a = new Audio("/api/preview/" + encodeURIComponent(v.vkey));
+  a.dataset.vkey = v.vkey;
+  try{ a.volume = Math.max(0, Math.min(1, (ST.volume==null?100:ST.volume)/100)); }catch(e){}
+  PREVIEW = a;
+  const done = (msg)=>{
+    if(PREVIEW !== a) return;
+    stopPreview();
+    if(msg) toast(msg);
+    if(PREVIEW_WAS){ PREVIEW_WAS = false; try{ resume(); }catch(e){} }
+  };
+  a.onended = ()=> done("");
+  a.onerror = ()=> done("Could not play that voice.");
+  const p = a.play();
+  if(p && p.catch) p.catch(()=> done("Could not play that voice."));
+}
+
 /* The Edge voices, in Settings, so the strip on top is never the only way to
    choose one. Same shape and the same colour coding as the Speechify grid,
    because they are the same job. */
@@ -5343,7 +5455,7 @@ function renderEdgeGrid(){
     b.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
     b.innerHTML = `<b>${v.name}</b><small>${v.label}</small>`;
     b.onclick = ()=>{ if(ST.engine !== "edge") setEngine("edge", true);
-                      setVoice(v.id); renderEdgeGrid(); };
+                      setVoice(v.id); renderEdgeGrid(); previewVoice(v); };
     wrap.appendChild(b);
   });
 }
@@ -5512,7 +5624,7 @@ function renderSpGrid(){
     b.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
     b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
     b.onclick = ()=>{ if(ST.engine !== "speechify") setEngine("speechify", true);
-                      setVoice(v.id); renderSpGrid(); };
+                      setVoice(v.id); renderSpGrid(); previewVoice(v); };
     wrap.appendChild(b);
   });
   renderSpPager();
@@ -6829,7 +6941,7 @@ function bind(){
   $("#focusTog").onclick = ()=>{ ST.focus=!ST.focus; refreshToggles(); persist(); };
 
   $("#backdrop").onclick = closeSheet;
-  $("#sheetDone").onclick = closeSheet;
+  $("#sheetDone").onclick = ()=>{ stopPreview(); closeSheet(); };
   document.querySelectorAll("#themeChips .chip").forEach(c=>
     c.onclick = ()=>{ ST.theme=c.dataset.theme; applyTheme(); persist(); });
   document.querySelectorAll("#fontChips .chip").forEach(c=>

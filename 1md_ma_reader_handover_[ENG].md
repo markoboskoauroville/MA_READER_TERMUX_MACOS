@@ -211,6 +211,22 @@ Settings sheet and all are remembered.
     Open in Chrome           chromeTog
     AI title and summary     aiMetaTog
 
+### Hearing a voice before choosing it
+
+Tapping a voice in either Settings grid makes it say "This is <name>. Hi
+there." A name in a list says nothing about a sound, and with 963 of them that
+is the whole difficulty.
+
+Route /api/preview/<vkey>, its own folder, one file per voice, made once and
+kept. Deliberately NOT routed through the library: a preview is not a text
+Marko saved and has no business in his Archive. If the reader was speaking it
+is paused for the sample and resumed after, so a preview never talks over the
+article and never abandons the reading. Tapping the same voice again stops it.
+
+Takes the same per-item lock the article cache takes. Without it, a fast thumb
+tapping four voices produced five failures out of ten and served a
+half-written file.
+
 ### The voice strip can be switched off
 
 "Voice buttons on top", in the Edge card, on by default. Off and the whole row
