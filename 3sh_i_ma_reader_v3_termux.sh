@@ -622,6 +622,15 @@ fi
 mkdir -p "$APPDIR/static"
 SETUP_LOG="$APPDIR/install.log"; : > "$SETUP_LOG"
 
+# a plain gold M on near black, so the home screen entry is not a blank square
+cat > "$APPDIR/static/icon.svg" << 'ICONEOF'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="42" fill="#080a10"/>
+  <text x="96" y="132" font-family="Georgia,serif" font-size="112"
+        font-weight="700" fill="#fadf9c" text-anchor="middle">M</text>
+</svg>
+ICONEOF
+
 if [ "$MODE" = "online" ]; then
   printf '   %sfetching python, ffmpeg, flask and edge-tts%s\n' "$AMBER" "$OFF"
   ( pkg update -y || true ) >>"$SETUP_LOG" 2>&1 || true
@@ -2988,6 +2997,27 @@ def browser_pref():
     return "auto" if v == "auto" else "chrome"
 
 
+@app.route("/manifest.webmanifest")
+def api_manifest():
+    """The only truly bulletproof way to be rid of the browser furniture.
+
+    The Fullscreen API hides the address bar while the page asks for it, but
+    Chrome puts it back on any hint of a scroll or a gesture, and some skins
+    keep a sliver of it no matter what. Installed to the home screen with
+    display standalone, there is no browser interface at all, because there is
+    no browser tab: it opens as its own window. Nothing can pin a bar to a
+    window that has none."""
+    return jsonify({
+        "name": "MA Reader", "short_name": "MA Reader",
+        "start_url": "/", "scope": "/",
+        "display": "standalone", "display_override": ["fullscreen", "standalone"],
+        "orientation": "any",
+        "background_color": "#080a10", "theme_color": "#080a10",
+        "icons": [{"src": "/static/icon.svg", "sizes": "any",
+                   "type": "image/svg+xml", "purpose": "any"}]
+    })
+
+
 @app.route("/api/browser", methods=["GET", "POST"])
 def api_browser():
     if request.method == "POST":
@@ -3605,6 +3635,11 @@ cat > "$APPDIR/static/index.html" << 'HTMLEOF'
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#080a10">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/static/icon.svg">
 <title>MA Reader</title>
 <style>
 @font-face{font-family:"OpenDyslexic";
@@ -4212,11 +4247,16 @@ body.hassession .tab.player{display:block}
 /* ---------- the floating P ----------
    Dragged anywhere, pressed to paste. It sits above everything because the
    whole point is that it is reachable without looking for it. */
-.floatp{position:fixed; z-index:70; width:56px; height:56px; border-radius:50%;
+.floatp{position:fixed; z-index:80; width:56px; height:56px; border-radius:50%;
   border:1px solid var(--line); background:var(--panel); color:var(--text);
   font-size:23px; font-weight:600; line-height:1; padding:0; display:none;
   align-items:center; justify-content:center; touch-action:none;
   box-shadow:0 3px 14px rgba(0,0,0,.45); opacity:.88}
+.floatp svg{width:24px; height:24px; display:block}
+/* in full screen it is the only control on the screen, so it earns its keep */
+body.fullread .floatp{opacity:.72; background:rgba(127,127,127,.16);
+  border-color:transparent}
+body.fullread .floatp:active{opacity:1}
 body.hasfloat .floatp{display:flex}
 .floatp:active{border-color:var(--tune); opacity:1}
 .floatp.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
@@ -4248,7 +4288,7 @@ body.hasfloat .floatp{display:flex}
   align-items:center; justify-content:center; padding:0}
 .fsout svg{width:20px; height:20px; display:block}
 .fsout:active{background:rgba(127,127,127,.26); color:var(--text)}
-body.fullread .fsout{display:flex}
+body.fullread .fsout{display:none}
 /* while the text is a paste target, say so with the cursor and kill the
    text selection that a tap would otherwise start */
 body.tappaste .doc, body.tappaste #offDoc{cursor:copy;
@@ -4661,8 +4701,19 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
     </div>
     <div class="langhint"><b>Floating paste button.</b> A round P that sits on
       top of everything. Drag it wherever your thumb lands and it stays there.
-      Press it and the clipboard replaces whatever is loaded and starts reading
-      from the beginning.
+      Press it and the clipboard replaces whatever is loaded, goes full screen,
+      and starts reading from the beginning.
+      <br><br>In full screen it changes face to the full screen glyph and
+      becomes the way out. Leaving pauses, going back in plays, because full
+      screen and reading are the same thing here. So the whole loop is one
+      thumb on one button: press to paste and read, press to come out, press
+      to paste the next one.
+      <br><br><b>If the address bar will not go away.</b> The full screen
+      request hides it, but Chrome puts it back on any gesture it feels like,
+      and that is not something a page can overrule. The cure is to install the
+      app: Chrome menu, then Add to Home screen. Opened from that icon it runs
+      in its own window with no browser interface at all, because there is no
+      tab for a bar to belong to. Nothing else is as reliable.
       <br><br>If the browser refuses to hand over the clipboard, and some do,
       a box opens with the cursor already in it. Long press, choose Paste, and
       reading starts the moment the text lands. That path works in any browser
@@ -6380,8 +6431,8 @@ function bind(){
   });
 
   { const b=$("#fsBtn"), o=$("#offFsBtn"), x=$("#fsOut");
-    if(b) b.onclick = enterFull;
-    if(o) o.onclick = enterFull;
+    if(b) b.onclick = ()=> enterFull(false);
+    if(o) o.onclick = ()=> enterFull(false);
     if(x) x.onclick = leaveFull;
   }
   { const b=$("#chromeTog");
@@ -6551,12 +6602,79 @@ function jumpToPlayer(){
 /* ---------- fullscreen reading ---------- */
 function setFullread(on){
   document.body.classList.toggle("fullread", !!on);
+  paintFloat();
 }
-/* The button pair. Unlike the old double tap, these only change what is on
-   screen: they never start or stop the voice, because that lives on the
-   player and one thing should do one thing. */
-function enterFull(){ setFullread(true); }
-function leaveFull(){ setFullread(false); }
+
+/* ---------- real full screen ----------
+   Hiding our own header was never going to be enough: the browser's own
+   furniture is not ours to hide. The Fullscreen API is, and it must be asked
+   for inside the gesture that wanted it, which is why the request goes out
+   before the clipboard is read rather than after.
+
+   It is still not bulletproof, because Chrome will put its bar back on a
+   gesture it does not like. The one thing that truly cannot be undone is
+   installing to the home screen: a standalone window has no browser interface
+   to pin anything to. The manifest is there for that, and Settings says so. */
+function fsElement(){
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+function reqFull(){
+  const el = document.documentElement;
+  const f = el.requestFullscreen || el.webkitRequestFullscreen ||
+            el.webkitRequestFullScreen || el.mozRequestFullScreen ||
+            el.msRequestFullscreen;
+  if(!f) return false;
+  try{
+    const r = f.call(el, {navigationUI: "hide"});
+    if(r && r.catch) r.catch(()=>{});
+    return true;
+  }catch(e){
+    try{ const r2 = f.call(el); if(r2 && r2.catch) r2.catch(()=>{}); return true; }
+    catch(_){ return false; }
+  }
+}
+function dropFull(){
+  const f = document.exitFullscreen || document.webkitExitFullscreen ||
+            document.webkitCancelFullScreen || document.mozCancelFullScreen ||
+            document.msExitFullscreen;
+  if(!f) return;
+  try{ const r = f.call(document); if(r && r.catch) r.catch(()=>{}); }catch(e){}
+}
+
+/* Full screen IS reading. Going in starts the voice, coming out stops it,
+   because that is the one gesture the whole workflow turns on. */
+function enterFull(play){
+  reqFull();
+  setFullread(true);
+  if(play !== false && !ST.playing && ST.sentences && ST.sentences.length){
+    try{ resume(); }catch(e){}
+  }
+}
+function leaveFull(){
+  dropFull();
+  setFullread(false);
+  if(ST.playing){ try{ pause(); }catch(e){} }
+  if(typeof OFF === "object" && OFF && OFF.playing){
+    try{ offToggle(); }catch(e){}
+  }
+}
+/* The system can drop us out of full screen on its own: the back gesture, a
+   notification, a swipe Chrome decided it liked. Treat that exactly like
+   pressing the button, or the app would carry on reading into a page the
+   person has already left. */
+function wireFsWatch(){
+  const onChange = ()=>{
+    const on = !!fsElement();
+    if(!on && document.body.classList.contains("fullread")){
+      setFullread(false);
+      if(ST.playing){ try{ pause(); }catch(e){} }
+    } else if(on){
+      setFullread(true);
+    }
+  };
+  ["fullscreenchange","webkitfullscreenchange","mozfullscreenchange",
+   "MSFullscreenChange"].forEach(e=> document.addEventListener(e, onChange));
+}
 function isFullread(){ return document.body.classList.contains("fullread"); }
 /* The gesture that opens the book also closes it. A double tap in the middle
    of the page strips away every control and starts speaking; a double tap in
@@ -6646,6 +6764,14 @@ function acceptPaste(t){
   readTextNow(t);
   return true;
 }
+/* If the clipboard came back empty, or the catcher was cancelled, we are
+   sitting in a full screen we asked for and never used. Come back out. */
+function unwindFull(){
+  if(document.body.classList.contains("fullread") &&
+     !(ST.sentences && ST.sentences.length)){
+    dropFull(); setFullread(false);
+  }
+}
 
 /* The catcher: the path that cannot fail, because it is only a text field.
    Opened whenever the quick way is refused. */
@@ -6659,6 +6785,7 @@ function openCatcher(){
 function closeCatcher(){
   const w=$("#catchWrap"); if(w) w.classList.remove("on");
   const b=$("#catchBox"); if(b){ try{ b.blur(); }catch(e){} }
+  unwindFull();
 }
 function catcherTake(){
   const b=$("#catchBox"); if(!b) return;
@@ -6700,8 +6827,33 @@ function placeFloat(){
   const [x,y]=clampFloat(fx*w, fy*h);
   el.style.left=x+"px"; el.style.top=y+"px";
 }
+const FS_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+  ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3' +
+  'M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
+
+/* One button, two faces, because it is one loop: paste, read, come back out,
+   paste the next. Out of full screen it offers the clipboard. In full screen
+   the clipboard is not what you want, leaving is. */
+function paintFloat(){
+  const el=$("#floatP"); if(!el) return;
+  const full = document.body.classList.contains("fullread");
+  el.innerHTML = full ? FS_GLYPH : "P";
+  el.title = full ? "Leave full screen and pause"
+                  : "Paste, read, and go full screen. Drag to move.";
+}
+function floatPress(){
+  if(document.body.classList.contains("fullread")){ leaveFull(); return; }
+  /* Ask for full screen HERE, inside the gesture, before anything async.
+     Requested after the clipboard resolves it would be refused, because the
+     user activation is spent by then. */
+  reqFull();
+  setFullread(true);
+  pasteFromClipboard();
+}
 function wireFloat(){
   const el=$("#floatP"); if(!el) return;
+  paintFloat();
   let sx=0, sy=0, ox=0, oy=0, moved=false, id=null;
   el.addEventListener("pointerdown",(e)=>{
     id=e.pointerId; moved=false;
@@ -6729,7 +6881,7 @@ function wireFloat(){
       ST.fpY = r.top/Math.max(1,window.innerHeight);
       persist();
     } else {
-      pasteFromClipboard();       /* a press, not a drag */
+      floatPress();               /* a press, not a drag */
     }
   };
   el.addEventListener("pointerup", done);
@@ -7339,7 +7491,7 @@ function boot(){
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
-    renderSpDead(); mediaSetup(); wireFloat();
+    renderSpDead(); mediaSetup(); wireFloat(); wireFsWatch();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
