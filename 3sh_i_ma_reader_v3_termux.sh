@@ -587,7 +587,7 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
 # a single request to rebuild, and carrying a stale one across an update is
 # how the picker got stuck showing four voices out of nine hundred.
-KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json web_state.json"
+KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json web_state.json browser.txt"
 
 STASH=""
 if [ -d "$APPDIR" ]; then
@@ -2974,6 +2974,34 @@ def _mk_try(name, argv):
         return False, str(e)[:40]
 
 
+BROWSER_FILE = os.path.join(WEB_DIR, "browser.txt")
+
+
+def browser_pref():
+    """chrome, or auto for whatever the phone decided. Kept as a plain line in
+    a file rather than inside the state json, because the launcher is a shell
+    script and has to read it before Python is even running."""
+    try:
+        v = open(BROWSER_FILE, encoding="utf-8").read().strip().lower()
+    except Exception:
+        return "chrome"
+    return "auto" if v == "auto" else "chrome"
+
+
+@app.route("/api/browser", methods=["GET", "POST"])
+def api_browser():
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        v = "auto" if str(data.get("mode", "chrome")).lower() == "auto" else "chrome"
+        try:
+            os.makedirs(WEB_DIR, exist_ok=True)
+            with open(BROWSER_FILE, "w", encoding="utf-8") as f:
+                f.write(v + "\n")
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+    return jsonify({"mode": browser_pref()})
+
+
 @app.route("/api/mediakey", methods=["POST"])
 def api_mediakey():
     """Send one media command to whatever else is playing.
@@ -4756,6 +4784,20 @@ body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
 
   <div class="group g-adv">
     <h3>Advanced</h3>
+    <div class="chips">
+      <button class="chip" id="chromeTog">Open in Chrome</button>
+    </div>
+    <div class="langhint">This app is built and tested against Chrome, so when
+      it starts it asks for Chrome by name rather than taking whichever browser
+      the phone happens to have set as default. Turn this off to go back to the
+      phone's own choice.
+      <br><br>If Chrome is not installed it falls back to the default anyway,
+      and says so in the terminal rather than failing silently. Beta, Dev and
+      Canary are all tried before giving up.
+      <br><br>While the app is running, the terminal takes one key:
+      <b>O</b> opens the page in Chrome, <b>A</b> opens it in the phone's
+      default browser, and <b>Q</b> stops the server. Useful when a tab has
+      gone stale, or to see the same page in two browsers at once.</div>
     <div class="wsub">Gemini key (optional)</div>
     <div class="keybox">
       <div class="keyhead">API key
@@ -4901,7 +4943,7 @@ const ST = {
      Speechify is keyed, English only, and brings its own word timings. */
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
-  floatPaste: true, fpX: 0.82, fpY: 0.72,
+  floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -5981,6 +6023,7 @@ function refreshToggles(){
   { const b=$("#bothTog"); if(b) b.classList.toggle("on", !!ST.bothEngines); }
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
+  { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
   document.body.classList.toggle("tappaste", !!ST.tapPaste);
   document.body.classList.toggle("hasfloat", !!ST.floatPaste);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
@@ -6340,6 +6383,19 @@ function bind(){
     if(b) b.onclick = enterFull;
     if(o) o.onclick = enterFull;
     if(x) x.onclick = leaveFull;
+  }
+  { const b=$("#chromeTog");
+    if(b) b.onclick = ()=>{
+      const mode = (ST.browser === "auto") ? "chrome" : "auto";
+      api("/api/browser", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({mode: mode})})
+        .then(r=>r.json()).then(d=>{
+          ST.browser = d.mode || mode; refreshToggles();
+          toast(ST.browser === "chrome" ? "Chrome from now on"
+                                        : "Whatever the phone prefers");
+        }).catch(()=> toast("Could not save that."));
+    };
   }
   { const b=$("#floatTog");
     if(b) b.onclick = ()=>{
@@ -7208,7 +7264,9 @@ function boot(){
     api("/api/state").then(r=>r.json()),
     api("/api/langs").then(r=>r.json()).catch(()=>({langs:[],default:["en","hr"]})),
     api("/api/speechify/status").then(r=>r.json()).catch(()=>null),
-  ]).then(([voices, st, lc, sp])=>{
+    api("/api/browser").then(r=>r.json()).catch(()=>({mode:"chrome"})),
+  ]).then(([voices, st, lc, sp, br])=>{
+    ST.browser = (br && br.mode) || "chrome";
     ST.voices = voices;
     ST.langs = (lc && lc.langs) || [];
     // validate saved languages against the catalogue, keep catalogue order.
@@ -7421,6 +7479,54 @@ if [ -z "$MA_NESTED" ] && type ma_banner >/dev/null 2>&1; then
   ma_banner "MA READER" "$PORT" "$MA_FIRE" "Fire | the Word"
 fi
 termux-wake-lock 2>/dev/null || true
+
+# ---------------------------------------------------------- which browser --
+# Android's default browser is whatever the phone decided, and this app is
+# built and tested against Chrome. So Chrome is asked for by name, and the
+# phone's own default is the fallback rather than the rule. One line in
+# browser.txt overrides it, and Settings writes that line, so the choice can
+# be made from inside the app without touching the terminal.
+# $'...' so the escapes become real bytes; a plain single quoted string
+# would print the characters \033[38;5;245m at you instead of colouring.
+DIMC=$'\033[38;5;245m'; KEYC=$'\033[1;38;5;222m'; OFFC=$'\033[0m'
+BROWSERFILE="$APPDIR/browser.txt"
+read_pref(){
+  [ -f "$BROWSERFILE" ] || { echo chrome; return; }
+  case "$(tr -d ' \r\n' < "$BROWSERFILE" | tr A-Z a-z)" in
+    auto) echo auto ;;
+    *)    echo chrome ;;
+  esac
+}
+
+# Every Chrome that exists, in the order worth trying. -p filters by package
+# rather than naming an activity, because the activity name has changed
+# between Chrome versions and the package name never has.
+CHROME_PKGS="com.android.chrome com.chrome.beta com.chrome.dev com.chrome.canary"
+
+open_chrome(){
+  command -v am >/dev/null 2>&1 || return 1
+  for PKG in $CHROME_PKGS; do
+    OUT="$(am start -a android.intent.action.VIEW -d "$1" -p "$PKG" 2>&1)" || continue
+    # am prints its failures and still exits zero, so read what it said
+    case "$OUT" in
+      *Error*|*error*|*Exception*|*"not found"*|*"does not exist"*) continue ;;
+    esac
+    return 0
+  done
+  return 1
+}
+
+open_default(){ termux-open-url "$1" >/dev/null 2>&1 || return 1; return 0; }
+
+open_url(){   # $1 url, $2 chrome|auto
+  if [ "$2" = "chrome" ]; then
+    open_chrome "$1" && return 0
+    printf '   %sChrome not found, using the phone default%s\n' "$DIMC" "$OFFC"
+  fi
+  open_default "$1"
+}
+
+
 # The server takes the first free port at or above the base one and writes the
 # winner to a portfile, so wait for that rather than guessing; otherwise a
 # second copy of the app would open the browser on the first copy's page.
@@ -7429,16 +7535,47 @@ rm -f "$PORTFILE"
   n=0
   while [ "$n" -lt 40 ]; do
     if [ -s "$PORTFILE" ]; then
-      termux-open-url "http://localhost:$(cat "$PORTFILE")" >/dev/null 2>&1 || true
+      open_url "http://localhost:$(cat "$PORTFILE")" "$(read_pref)"
       exit 0
     fi
     sleep 0.25; n=$((n+1))
   done
-  termux-open-url "http://localhost:$PORT" >/dev/null 2>&1 || true
+  open_url "http://localhost:$PORT" "$(read_pref)"
 ) &
-MAREAD_WEB_HOST="$HOST" MAREAD_WEB_PORT="$PORT" python "$APPDIR/server.py"
-ST=$?
-termux-wake-unlock 2>/dev/null || true
+
+MAREAD_WEB_HOST="$HOST" MAREAD_WEB_PORT="$PORT" python "$APPDIR/server.py" &
+SRV=$!
+cleanup(){ kill "$SRV" 2>/dev/null; termux-wake-unlock 2>/dev/null; }
+trap 'cleanup; exit 0' INT TERM
+
+# ------------------------------------------------------------- hotkeys -----
+# While it runs, one key reopens the page. Useful when the browser was closed,
+# or when a page has gone stale and you want a second opinion from the other
+# browser without stopping the server.
+url_now(){
+  if [ -s "$PORTFILE" ]; then echo "http://localhost:$(cat "$PORTFILE")";
+  else echo "http://localhost:$PORT"; fi
+}
+if [ -t 0 ]; then
+  printf '\n   %s[O]%s open in Chrome    %s[A]%s open in the default browser    %s[Q]%s stop\n\n' \
+    "$KEYC" "$OFFC" "$KEYC" "$OFFC" "$KEYC" "$OFFC"
+  while kill -0 "$SRV" 2>/dev/null; do
+    if IFS= read -rsn1 -t 1 K 2>/dev/null; then
+      case "$K" in
+        o|O) printf '   %sopening in Chrome%s\n' "$DIMC" "$OFFC"
+             open_url "$(url_now)" chrome ;;
+        a|A) printf '   %sopening in the default browser%s\n' "$DIMC" "$OFFC"
+             open_default "$(url_now)" ;;
+        q|Q) break ;;
+      esac
+    fi
+  done
+  cleanup
+  ST=0
+else
+  wait "$SRV"; ST=$?
+  termux-wake-unlock 2>/dev/null || true
+fi
 exit $ST
 LAUNCHEOF
 chmod +x "$BIN/mareadweb"
