@@ -2502,6 +2502,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "tapPaste": True, "floatPaste": True, "voiceBar": True,
+                  "hideEdge": False, "hideSp": False, "spPicked": [],
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
@@ -4562,6 +4563,21 @@ body.hassession .tab.player{display:block}
 .spcell small{display:block; font-size:10.5px; color:var(--faint); margin-top:2px}
 .spcell.on{background:color-mix(in srgb, var(--tune) 12%, var(--panel));
   box-shadow:0 0 0 2px var(--tune)}
+/* Two things in one cell, with their own hit areas: the box on the left says
+   whether this voice appears on top, the rest of the cell chooses it and
+   plays it. */
+.spcell{display:flex; align-items:center; gap:10px}
+.spbox{flex:0 0 auto; width:26px; height:26px; border-radius:7px;
+  border:2px solid var(--line); background:transparent; color:var(--tune);
+  display:flex; align-items:center; justify-content:center; font-size:16px;
+  line-height:1; padding:0}
+.spbox.ticked{border-color:var(--tune);
+  background:color-mix(in srgb, var(--tune) 18%, transparent)}
+.spname{flex:1; min-width:0; text-align:left; background:transparent;
+  border:none; padding:0; color:inherit}
+.spname b{display:block; font-size:14px; color:var(--text); font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.spname small{display:block; font-size:10.5px; color:var(--faint); margin-top:2px}
 /* the same frame on the four buttons at the top of the reader */
 .voice.f{border-color:var(--femme)}
 .voice.m{border-color:var(--homme)}
@@ -4952,9 +4968,13 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <!-- Two engines, two buttons, and the cards below follow whichever is
        chosen. Everything to do with voices is engine-shaped, so it hides;
        speed, the pauses, the text and the colours belong to both and stay. -->
-  <div class="chips" id="bothWrap" style="margin:0 0 12px">
-    <button class="chip" id="bothTog">Show both engines</button>
+  <div class="wsub" style="margin-top:0">Hide from the top row</div>
+  <div class="chips" id="bothWrap" style="margin:0 0 6px">
+    <button class="chip" id="hideEdgeTog">Hide Edge</button>
+    <button class="chip" id="hideSpTog">Hide Speechify</button>
   </div>
+  <div class="langhint" style="margin-bottom:12px">Hidden engines cannot be
+    tapped by a pocket.</div>
   <div class="engtabs" id="engTabs">
     <button class="engtab" data-engine="edge">
       <b>Edge</b><small>free &middot; 13 languages</small></button>
@@ -4971,10 +4991,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="chips">
       <button class="chip" id="voiceBarTog">Voice buttons on top</button>
     </div>
-    <div class="langhint">Switch that off and the row of voice buttons leaves
-      the top of the reader entirely, which is a whole band of screen given
-      back to the text. The voice is then chosen here instead, and stays
-      chosen. Everything else works exactly as before.</div>
+    <div class="langhint">Off: the whole row leaves the top of the reader.</div>
     <div class="wsub">The voice</div>
     <div class="spgrid" id="edgeVoiceGrid"></div>
     <div class="setlegend">
@@ -4982,8 +4999,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <span><i style="border-color:var(--homme)"></i>male</span>
     </div>
     <div class="wsub">Languages</div>
-    <div class="langhint">Tick a language to add its two voices, one female and
-      one male, to the list above. Untick to hide them.</div>
+    <div class="langhint">Tick a language to add its two voices.</div>
     <div class="lang-tools">
       <button id="langAll">Select all</button>
       <button id="langNone">Clear</button>
@@ -4993,16 +5009,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 
   <div class="group g-sp" data-eng="speechify">
     <h3>Speechify voices</h3>
-    <div class="langhint">Speechify has no Croatian and no other Slavic voice,
-      so this engine is English and nothing else. Pick an accent, then page
-      through its voices four at a time. There are 33 British and 84 American
-      voices and no way to tell from a name whether you will like one, so the
-      four buttons at the top of the reader are a window onto the list rather
-      than the whole of it: whichever four are showing here are the four up
-      there, ready to try.
-      <br><br>The first page holds the voices Speechify itself puts forward
-      for new work, then the ones it calls popular, then the rest by name.
-      Every page is two women and two men.</div>
+    <div class="langhint">English only. Tick the voices you want on top; any number.</div>
     <div class="accrow" id="spAccents"></div>
 
     <div class="setbar">
@@ -5030,21 +5037,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="spstate" id="spState"></div>
     <div id="spList"></div>
     <div id="spDead"></div>
-    <div class="langhint">One key per line, with a name above it saying whose
-      it is; anything that is not a key is read as a label, so a heading or a
-      note in the file is never mistaken for a credential.
-      <br><br>Keys are tried in file order and nothing is tested in advance.
-      The first key that is not already known to be dead is simply used, and it
-      keeps being used until a request comes back rejected. Only then is it
-      marked dead, here, permanently, and only then does the ring roll on to
-      the next one and repeat the sentence that failed. So a dead key costs one
-      wasted request in its whole life, and a working ring costs none at all.
-      A key that is merely rate limited is stood down for a few minutes rather
-      than condemned, and a key is never blamed for the network being down.
-      <br><br>The file is copied into the app folder and never leaves this
-      phone. Nothing but the first six and last four characters of a key is
-      ever shown, and the dead list stores a fingerprint rather than the key,
-      so it gives up nothing at all.</div>
+    <div class="langhint">One key per line, a name above each. Tried in order, first good one used.</div>
   </div>
 
   <!-- Then the rest, ordered by how often a thing is touched, not how
@@ -5070,27 +5063,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <span class="val" id="gapVal">0.00</span>
       <button data-step="gap" data-d="1">+</button>
     </div>
-    <div class="langhint">All three of these are on the player itself now, so
-      this card is only here for the times you want to set them without a text
-      open. On the bar the two pauses sit together on the left, play is in the
-      middle where it has always been, and speed is on the right.
-      <br><br>The pause between WORDS is a real pause. The voice has already
-      spoken the sentence into one clip with its own small silences between
-      the words; the server measures exactly where those silences fall, and the
-      player stops the clip dead inside one and starts it again after the time
-      you asked for. Nothing is re-recorded, nothing is sped up or slowed down,
-      and because the stop happens in silence rather than in speech, no word is
-      ever clipped and no consonant is ever cut in half. That is why it only
-      runs upward from zero: there is no way to have less silence than the
-      voice actually recorded.
-      <br><br>The pause between SENTENCES is space we make ourselves between
-      one clip and the next, so it can go below zero as well. A negative value
-      is a real overlap: the next sentence begins that much before this one has
-      finished, which closes the seam completely.
-      <br><br>Everything moves in twentieths, so a press is a nudge and a hold
-      travels a long way; tap the number between the minus and the plus to send
-      that control back where it started.
-    </div>
+    <div class="langhint">Also on the player. Word pause is a real pause, sentence pause can overlap.</div>
     <div class="synctop" style="margin-top:10px">
       <span>Volume</span><span class="val" id="volVal">100%</span>
     </div>
@@ -5106,57 +5079,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="bgResumeTog">Resume my music</button>
       <button class="chip" id="bgTestBtn">Test it</button>
     </div>
-    <div class="langhint"><b>Floating paste button.</b> A round P that sits on
-      top of everything. Drag it wherever your thumb lands and it stays there.
-      Press it and the clipboard replaces whatever is loaded, goes full screen,
-      and starts reading from the beginning.
-      <br><br>In full screen it changes face to the full screen glyph and
-      becomes the way out. Leaving pauses, going back in plays, because full
-      screen and reading are the same thing here. So the whole loop is one
-      thumb on one button: press to paste and read, press to come out, press
-      to paste the next one.
-      <br><br><b>If the address bar will not go away.</b> The full screen
-      request hides it, but Chrome puts it back on any gesture it feels like,
-      and that is not something a page can overrule. The cure is to install the
-      app: Chrome menu, then Add to Home screen. Opened from that icon it runs
-      in its own window with no browser interface at all, because there is no
-      tab for a bar to belong to. Nothing else is as reliable.
-      <br><br>If the browser refuses to hand over the clipboard, and some do,
-      a box opens with the cursor already in it. Long press, choose Paste, and
-      reading starts the moment the text lands. That path works in any browser
-      ever made, because it is just a text field.
-      <br><br><b>Tap text to paste.</b> On by default, and it is
-      the whole point of the app for anyone reading one article after another.
-      A tap anywhere on the text being read asks for the clipboard; Android
-      shows its Paste button; you press it and the new text replaces the old
-      one and starts speaking. One finger, two presses, no menus.
-      <br><br>It costs the old tap gestures, which is why it is a switch.
-      While it is on, tapping a sentence no longer jumps to it and the double
-      tap in the middle no longer opens full screen, because a tap cannot mean
-      three things at once. Play and pause live on the player, full screen has
-      its own button beside the progress bar, and swiping still steps a
-      sentence at a time. Turn it off to have the old taps back.</div>
-    <div class="langhint"><b>Resume my music.</b> When this app speaks, Android
-      hands it the audio focus and whatever else was playing stops at once, no
-      fade, nothing to configure. That half is free.
-      <br><br>Starting your music again afterwards is not free. A page in a
-      browser cannot reach into another app, and neither can Termux by itself:
-      Android only accepts a media command from a process holding shell
-      privileges. Developer options can grant those without root, in two ways,
-      and either one needs doing once per reboot.
-      <br><br>Run <b>maread-adb</b> in Termux to set it up. It looks for
-      Shizuku first, then for Termux's own ADB over Wireless debugging, and
-      tells you which one your phone will accept. Then press Test here.
-      <br><br>Once a route works it is remembered, so a pause costs one small
-      command rather than a search. If the route later breaks, a Wi-Fi change
-      or a reboot, the search runs again by itself and this switch turns off
-      quietly rather than asking on every pause.
-      <br><br>It sends the media session a real PLAY, not a play/pause toggle,
-      so if your player already came back on its own this cannot knock it out
-      again.</div>
-    <div class="langhint">Swiping across the text moves a sentence. Normally
-      you drag right to bring the next sentence in, the way a page turns.
-      Reverse swipe flips that if the other way round feels right to you.</div>
+    <div class="langhint"><b>Floating paste button.</b> Drag it anywhere. Press: paste, full screen, read. In full screen it is the way out.</div>
+    <div class="langhint"><b>Resume my music.</b> Asks your player to start again when you pause. Needs maread-adb.</div>
+    <div class="langhint">Swap the direction a swipe moves.</div>
   </div>
 
   <div class="group g-text">
@@ -5245,17 +5170,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="chips">
       <button class="chip" id="chromeTog">Open in Chrome</button>
     </div>
-    <div class="langhint">This app is built and tested against Chrome, so when
-      it starts it asks for Chrome by name rather than taking whichever browser
-      the phone happens to have set as default. Turn this off to go back to the
-      phone's own choice.
-      <br><br>If Chrome is not installed it falls back to the default anyway,
-      and says so in the terminal rather than failing silently. Beta, Dev and
-      Canary are all tried before giving up.
-      <br><br>While the app is running, the terminal takes one key:
-      <b>O</b> opens the page in Chrome, <b>A</b> opens it in the phone's
-      default browser, and <b>Q</b> stops the server. Useful when a tab has
-      gone stale, or to see the same page in two browsers at once.</div>
+    <div class="langhint">Ask for Chrome by name instead of the phone default.</div>
     <div class="wsub">Gemini key (optional)</div>
     <div class="keybox">
       <div class="keyhead">API key
@@ -5402,7 +5317,7 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
-  voiceBar: true,
+  voiceBar: true, hideEdge: false, hideSp: false, spPicked: [],
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -5466,8 +5381,34 @@ function spWindow(){
   const per = ST.spPerSet || 4, s = spClampSet();
   return (ST.spVoices || []).slice(s * per, s * per + per);
 }
+/* The Speechify voices ticked for the top row. Any number of them, because
+   the row scrolls; four was only ever the size of the window in Settings. */
+function spPickedVoices(){
+  const want = ST.spPicked || [];
+  if(!want.length) return [];
+  const by = {}, seen = {};
+  (ST.spVoices || []).forEach(v => { by[v.vkey] = v; });
+  /* de-duped on the way out. Ticking cannot produce a repeat, but a state
+     file edited by hand or merged from two devices can, and the same voice
+     twice in the row is confusing rather than harmless. */
+  return want.filter(k => {
+    if(!by[k] || seen[k]) return false;
+    seen[k] = 1; return true;
+  }).map(k => by[k]);
+}
+function isPicked(vkey){ return (ST.spPicked || []).indexOf(vkey) >= 0; }
+function togglePick(vkey){
+  const a = (ST.spPicked || []).slice();
+  const i = a.indexOf(vkey);
+  if(i >= 0) a.splice(i, 1); else a.push(vkey);
+  ST.spPicked = a;
+}
+/* Each engine can be kept off the top row entirely. A row that is not there
+   cannot be pressed by a pocket, which is the whole reason for it. */
+function topEdge(){ return ST.hideEdge ? [] : edgeVoices(); }
+function topSp(){ return ST.hideSp ? [] : spPickedVoices(); }
 function shownVoices(){
-  return ST.engine === "speechify" ? spWindow() : edgeVoices();
+  return ST.engine === "speechify" ? topSp() : topEdge();
 }
 /* the whole list, for looking a voice up by id even when it is not on screen */
 function spAll(){ return ST.spVoices || []; }
@@ -5543,12 +5484,15 @@ function renderEdgeGrid(){
     wrap.appendChild(d); return;
   }
   list.forEach(v=>{
-    const b = document.createElement("button");
-    b.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
-    b.innerHTML = `<b>${v.name}</b><small>${v.label}</small>`;
-    b.onclick = ()=>{ if(ST.engine !== "edge") setEngine("edge", true);
-                      setVoice(v.id); renderEdgeGrid(); previewVoice(v); };
-    wrap.appendChild(b);
+    const row = document.createElement("div");
+    row.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
+    const nm = document.createElement("button");
+    nm.className = "spname";
+    nm.innerHTML = `<b>${v.name}</b><small>${v.label}</small>`;
+    nm.onclick = ()=>{ if(ST.engine !== "edge") setEngine("edge", true);
+                       setVoice(v.id); renderEdgeGrid(); previewVoice(v); };
+    row.appendChild(nm);
+    wrap.appendChild(row);
   });
 }
 function renderVoices(){
@@ -5565,8 +5509,10 @@ function renderVoices(){
     return;
   }
   document.body.classList.remove("nobar");
-  const sp = spWindow(), ed = edgeVoices();
-  const dual = !!ST.bothEngines && sp.length > 0 && ed.length > 0;
+  const sp = topSp(), ed = topEdge();
+  /* Two rows whenever both engines have something to show. The old separate
+     switch for this is gone: the two hide switches say it better. */
+  const dual = sp.length > 0 && ed.length > 0;
   wrap.classList.toggle("dual", dual);
   const list = dual ? sp.concat(ed) : shownVoices();
   // nothing to show: the whole strip disappears, the reader quietly keeps
@@ -5712,12 +5658,27 @@ function renderSpGrid(){
     renderSpPager(); return;
   }
   list.forEach(v=>{
-    const b = document.createElement("button");
-    b.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
-    b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
-    b.onclick = ()=>{ if(ST.engine !== "speechify") setEngine("speechify", true);
-                      setVoice(v.id); renderSpGrid(); previewVoice(v); };
-    wrap.appendChild(b);
+    const row = document.createElement("div");
+    row.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
+
+    const box = document.createElement("button");
+    box.className = "spbox" + (isPicked(v.vkey) ? " ticked" : "");
+    box.innerHTML = isPicked(v.vkey) ? "&#10003;" : "";
+    box.title = "Show this voice at the top";
+    box.onclick = (e)=>{
+      e.stopPropagation();
+      togglePick(v.vkey);
+      renderSpGrid(); renderVoices(); persist();
+    };
+    row.appendChild(box);
+
+    const nm = document.createElement("button");
+    nm.className = "spname";
+    nm.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
+    nm.onclick = ()=>{ if(ST.engine !== "speechify") setEngine("speechify", true);
+                       setVoice(v.id); renderSpGrid(); previewVoice(v); };
+    row.appendChild(nm);
+    wrap.appendChild(row);
   });
   renderSpPager();
 }
@@ -6586,7 +6547,8 @@ function step(kind, d){
 
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
-  { const b=$("#bothTog"); if(b) b.classList.toggle("on", !!ST.bothEngines); }
+  { const b=$("#hideEdgeTog"); if(b) b.classList.toggle("on", !!ST.hideEdge); }
+  { const b=$("#hideSpTog"); if(b) b.classList.toggle("on", !!ST.hideSp); }
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
@@ -6829,6 +6791,8 @@ function persist(){
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
+        hideEdge:!!ST.hideEdge, hideSp:!!ST.hideSp,
+        spPicked:(ST.spPicked||[]),
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
@@ -7001,11 +6965,18 @@ function bind(){
                         : "Tap a sentence to read from it");
     };
   }
-  { const b=$("#bothTog");
+  { const b=$("#hideEdgeTog");
     if(b) b.onclick = ()=>{
-      ST.bothEngines = !ST.bothEngines;
+      ST.hideEdge = !ST.hideEdge;
       refreshToggles(); renderVoices(); persist();
-      toast(ST.bothEngines ? "Speechify on top, Edge below" : "One engine");
+      toast(ST.hideEdge ? "Edge hidden from the top" : "Edge back on top");
+    };
+  }
+  { const b=$("#hideSpTog");
+    if(b) b.onclick = ()=>{
+      ST.hideSp = !ST.hideSp;
+      refreshToggles(); renderVoices(); persist();
+      toast(ST.hideSp ? "Speechify hidden from the top" : "Speechify back on top");
     };
   }
   { const b=$("#bgResumeTog");
@@ -7144,7 +7115,23 @@ function setFullread(on){
 function fsElement(){
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
+/* Installed to the home screen there is no browser tab, so there is nothing
+   to hide and no reason to ask for full screen at all. That matters for one
+   reason above all: asking is what makes Chrome throw up its own banner
+   saying how to leave full screen, and that banner belongs to the browser,
+   sits above the page, and cannot be touched or dismissed from here. No
+   request, no banner. In a plain tab the request is still needed, and the
+   banner comes with it whether we like it or not. */
+function isStandalone(){
+  try{
+    if(window.navigator && window.navigator.standalone) return true;
+    return window.matchMedia("(display-mode: standalone)").matches ||
+           window.matchMedia("(display-mode: fullscreen)").matches ||
+           window.matchMedia("(display-mode: minimal-ui)").matches;
+  }catch(e){ return false; }
+}
 function reqFull(){
+  if(isStandalone()) return true;      /* already our own window */
   const el = document.documentElement;
   const f = el.requestFullscreen || el.webkitRequestFullscreen ||
             el.webkitRequestFullScreen || el.mozRequestFullScreen ||
@@ -7964,6 +7951,9 @@ function boot(){
     ST.spSet   = Math.max(0, st.spSet | 0);
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
+    ST.hideEdge = !!st.hideEdge;
+    ST.hideSp = !!st.hideSp;
+    ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : [];
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
@@ -7973,6 +7963,9 @@ function boot(){
             if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
     spClampSet();
+    if(!(ST.spPicked||[]).length && (ST.spVoices||[]).length){
+      ST.spPicked = ST.spVoices.slice(0, ST.spPerSet || 4).map(v=>v.vkey);
+    }
     /* a saved Speechify engine with no voices behind it (no key yet, or no
        network) quietly falls back to Edge rather than showing an empty strip */
     if(ST.engine === "speechify" && !(ST.spVoices||[]).length) ST.engine = "edge";
@@ -8012,7 +8005,7 @@ function boot(){
         ? st.wordoffsets : {};
     // if the remembered voice belongs to a language that is not enabled,
     // fall back to the first voice of the first enabled language
-    const _vis = ST.bothEngines ? spWindow().concat(edgeVoices()) : shownVoices();
+    const _vis = topSp().concat(topEdge());
     if(!_vis.some(x=>x.id===ST.voice)){
       const first = _vis[0];
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }

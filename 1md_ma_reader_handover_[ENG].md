@@ -132,7 +132,11 @@ exactly how the player bar and voice strip survived into full screen.
 
 The browser's own furniture is handled by the real Fullscreen API, requested
 inside the gesture, before the clipboard is read, because asking after it
-resolves is refused. It is still not absolute: Chrome restores its bar when it
+resolves is refused. Installed to the home screen the request is skipped
+entirely: there is no tab to hide, and skipping it also avoids Chrome's own
+banner about how to leave full screen, which is drawn by the browser above the
+page and cannot be dismissed from here. In a plain tab that banner comes with
+the territory and no page can remove it. It is still not absolute: Chrome restores its bar when it
 feels like it. The cure is Chrome menu, Add to Home screen. The app ships a
 manifest with display standalone, so opened from that icon it has no browser
 interface at all.
@@ -197,7 +201,8 @@ output, not just the exit code.
 Generated from the shipped page, so it cannot drift. All live in the
 Settings sheet and all are remembered.
 
-    Show both engines        bothTog
+    Hide Edge                hideEdgeTog
+    Hide Speechify           hideSpTog
     Voice buttons on top     voiceBarTog
     Auto-play on open        autoplayTog
     Remember position        resumeTog
@@ -237,6 +242,29 @@ With all 21 keys dead, previews already made still played from disk and a new
 one failed cleanly leaving no empty file. Forget removed the Speechify
 previews and kept the Edge ones. The usage counter recorded 27 characters for
 "This is Beatrice. Hi there.", which is exactly its length.
+
+### What appears on the top row
+
+Two switches at the very top of Settings, one per engine: Hide Edge, Hide
+Speechify. A row that is not there cannot be pressed by a pocket, which is the
+whole reason for them; a phone in a pocket had been changing the voice by
+itself.
+
+Below that, every Speechify voice in the paged grid carries a tick box. Ticked
+voices go on the top row, ANY NUMBER of them, because the row scrolls. Four
+was only ever the size of the window in Settings, never a limit on the row.
+Untick everything and nothing shows.
+
+The cell has two hit areas: the box on the left decides whether the voice is
+on top, the rest of the cell chooses it and plays it. The picked list is
+de-duped on the way out, since a state file edited by hand or merged between
+devices can repeat an entry.
+
+Unticking the voice that is currently speaking does not stop it. It keeps
+reading and simply stops being shown, which is the least surprising thing.
+
+The old "Show both engines" switch is retired: two rows now appear whenever
+both engines have something to show, which the two hide switches say better.
 
 ### The voice strip can be switched off
 
