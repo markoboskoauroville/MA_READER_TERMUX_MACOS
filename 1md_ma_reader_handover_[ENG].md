@@ -192,6 +192,7 @@ Generated from the shipped page, so it cannot drift. All live in the
 Settings sheet and all are remembered.
 
     Show both engines        bothTog
+    Voice buttons on top     voiceBarTog
     Auto-play on open        autoplayTog
     Remember position        resumeTog
     Focus mode               focusTog
@@ -203,6 +204,15 @@ Settings sheet and all are remembered.
     Test it                  bgTestBtn
     Open in Chrome           chromeTog
     AI title and summary     aiMetaTog
+
+### The voice strip can be switched off
+
+"Voice buttons on top", in the Edge card, on by default. Off and the whole row
+of voice buttons leaves the top of the reader, giving that band back to the
+text. The voice is then chosen from a grid in Settings instead, which exists
+either way and stays in step with the strip. Same shape and the same female
+pink, male blue colour coding as the Speechify grid, because it is the same
+job.
 
 ## Every route
 

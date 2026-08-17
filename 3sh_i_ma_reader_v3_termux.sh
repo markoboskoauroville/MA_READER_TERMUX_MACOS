@@ -2409,7 +2409,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
-                  "tapPaste": True, "floatPaste": True,
+                  "tapPaste": True, "floatPaste": True, "voiceBar": True,
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
@@ -4342,6 +4342,10 @@ body:not(.inreader):not(.onhome) .voices{display:none}
 /* with zero languages the voice strip is gone, so the gear drops onto the tab
    row line; reserve room on the right so tabs never slide under it */
 body.novoice nav.tabs{padding-right:40px}
+/* The strip switched off by hand. Same result as having no voices at all,
+   so it borrows the same rule and gives the reader back that whole band. */
+body.nobar .voices{display:none !important}
+body.nobar nav.tabs{padding-right:40px}
 .tab.player{color:var(--play); border-color:var(--play); display:none}
 body.hassession .tab.player{display:block}
 .paste-top{display:flex; gap:8px; margin-bottom:8px}
@@ -4799,8 +4803,22 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
        sits directly under the buttons that choose them. -->
   <div class="group g-voice" data-eng="edge">
     <h3>Edge voices</h3>
+    <div class="chips">
+      <button class="chip" id="voiceBarTog">Voice buttons on top</button>
+    </div>
+    <div class="langhint">Switch that off and the row of voice buttons leaves
+      the top of the reader entirely, which is a whole band of screen given
+      back to the text. The voice is then chosen here instead, and stays
+      chosen. Everything else works exactly as before.</div>
+    <div class="wsub">The voice</div>
+    <div class="spgrid" id="edgeVoiceGrid"></div>
+    <div class="setlegend">
+      <span><i style="border-color:var(--femme)"></i>female</span>
+      <span><i style="border-color:var(--homme)"></i>male</span>
+    </div>
+    <div class="wsub">Languages</div>
     <div class="langhint">Tick a language to add its two voices, one female and
-      one male, to the picker at the top of the reader. Untick to hide them.</div>
+      one male, to the list above. Untick to hide them.</div>
     <div class="lang-tools">
       <button id="langAll">Select all</button>
       <button id="langNone">Clear</button>
@@ -5219,6 +5237,7 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
+  voiceBar: true,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -5306,11 +5325,42 @@ function voiceBtn(v){
   b.onclick = ()=> setVoice(v.id);
   return b;
 }
+/* The Edge voices, in Settings, so the strip on top is never the only way to
+   choose one. Same shape and the same colour coding as the Speechify grid,
+   because they are the same job. */
+function renderEdgeGrid(){
+  const wrap = $("#edgeVoiceGrid"); if(!wrap) return;
+  wrap.innerHTML = "";
+  const list = edgeVoices();
+  if(!list.length){
+    const d = document.createElement("div");
+    d.className = "spstate";
+    d.textContent = "No languages ticked, so there are no voices to choose.";
+    wrap.appendChild(d); return;
+  }
+  list.forEach(v=>{
+    const b = document.createElement("button");
+    b.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
+    b.innerHTML = `<b>${v.name}</b><small>${v.label}</small>`;
+    b.onclick = ()=>{ if(ST.engine !== "edge") setEngine("edge", true);
+                      setVoice(v.id); renderEdgeGrid(); };
+    wrap.appendChild(b);
+  });
+}
 function renderVoices(){
   const wrap = $("#voices"); wrap.innerHTML = "";
   /* Both engines at once, when asked for and when there is something in
      both. Speechify goes on top because its row is the one that changes as
      you page through it; Edge underneath is the settled one. */
+  /* switched off by hand: the strip goes entirely, and the voice keeps
+     working from whatever was last chosen in Settings */
+  if(!ST.voiceBar){
+    wrap.style.display = "none";
+    document.body.classList.add("nobar");
+    renderEdgeGrid();
+    return;
+  }
+  document.body.classList.remove("nobar");
   const sp = spWindow(), ed = edgeVoices();
   const dual = !!ST.bothEngines && sp.length > 0 && ed.length > 0;
   wrap.classList.toggle("dual", dual);
@@ -5331,6 +5381,7 @@ function renderVoices(){
   } else {
     list.forEach(v => wrap.appendChild(voiceBtn(v)));
   }
+  renderEdgeGrid();
   // keep the selected chip in view when the strip scrolls
   const onChip = wrap.querySelector(".voice.on");
   if(onChip && onChip.scrollIntoView) try{
@@ -5400,6 +5451,7 @@ function setVoice(id){
   }
   if(ST.tid) prefetch(ST.idx);
   if(v.engine === "speechify") ST.spVkey = v.vkey;
+  try{ renderEdgeGrid(); renderSpGrid(); }catch(e){}
   setStatus("Voice: " + v.name + " (" + voiceSub(v) + ")");
 }
 
@@ -6334,6 +6386,8 @@ function refreshToggles(){
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
+  { const b=$("#voiceBarTog"); if(b) b.classList.toggle("on", !!ST.voiceBar); }
+  document.body.classList.toggle("nobar", !ST.voiceBar);
   document.body.classList.toggle("tappaste", !!ST.tapPaste);
   document.body.classList.toggle("hasfloat", !!ST.floatPaste);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
@@ -6571,6 +6625,7 @@ function persist(){
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
+        voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs})}).catch(()=>{});
   }, 250);
@@ -6693,6 +6748,14 @@ function bind(){
     if(b) b.onclick = ()=> enterFull(false);
     if(o) o.onclick = ()=> enterFull(false);
     if(x) x.onclick = leaveFull;
+  }
+  { const b=$("#voiceBarTog");
+    if(b) b.onclick = ()=>{
+      ST.voiceBar = !ST.voiceBar;
+      refreshToggles(); renderVoices(); persist();
+      toast(ST.voiceBar ? "Voice buttons back on top"
+                        : "Voice buttons off. Choose the voice here.");
+    };
   }
   { const b=$("#chromeTog");
     if(b) b.onclick = ()=>{
@@ -7697,6 +7760,7 @@ function boot(){
     ST.spSet   = Math.max(0, st.spSet | 0);
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
+    ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
     if(typeof st.fpX === "number") ST.fpX = st.fpX;
@@ -7750,7 +7814,8 @@ function boot(){
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
-    renderSpKeyList(); renderSpDead(); mediaSetup(); wireFloat(); wireFsWatch();
+    renderEdgeGrid(); renderSpKeyList(); renderSpDead();
+    mediaSetup(); wireFloat(); wireFsWatch();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
