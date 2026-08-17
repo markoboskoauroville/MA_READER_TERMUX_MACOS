@@ -4288,14 +4288,39 @@ body.hasfloat .floatp{display:flex}
   align-items:center; justify-content:center; padding:0}
 .fsout svg{width:20px; height:20px; display:block}
 .fsout:active{background:rgba(127,127,127,.26); color:var(--text)}
-body.fullread .fsout{display:none}
+body.fullread .fsout{display:none !important}
 /* while the text is a paste target, say so with the cursor and kill the
    text selection that a tap would otherwise start */
 body.tappaste .doc, body.tappaste #offDoc{cursor:copy;
   -webkit-user-select:none; user-select:none}
-body.fullread header, body.fullread .controls, body.fullread .off-controls,
-body.fullread .gear-corner{display:none !important}
-body.fullread .reader-scroll{padding-top:calc(10px + env(safe-area-inset-top))}
+/* ---------- FULL SCREEN MEANS FULL SCREEN ----------
+   The old rules named the things to hide: header, controls, gear. That is a
+   list, and a list goes stale the moment anything is added, which is exactly
+   what happened; the player and the voice strip were still sitting there.
+
+   So this is turned inside out. Hide EVERY direct child of the body, then name
+   the few that are allowed to stay. Anything added to this app in future is
+   hidden by default in full screen and has to argue its way back on, which is
+   the right way round.
+
+   What stays: the text, and the one floating button to get out. That is all.
+   The toast stays too, because a message you cannot see is worse than useless,
+   and the paste catcher stays because it only opens when it is wanted. */
+body.fullread > *{display:none !important}
+body.fullread > main{display:block !important}
+body.fullread > .floatp{display:flex !important}
+body.fullread > .toast{display:block !important}
+body.fullread > .catchwrap.on{display:flex !important}
+
+/* Inside the reader, the same idea again: only the scrolling text survives.
+   The progress row, the player bar, the status line, anything else, gone. */
+body.fullread .view > *:not(.reader-scroll){display:none !important}
+
+/* and the text takes the whole screen, not the space the player left behind */
+body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
+  height:auto; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(20px + env(safe-area-inset-top)) 17px
+          calc(28px + env(safe-area-inset-bottom))}
 </style>
 </head>
 <body data-theme="night">
