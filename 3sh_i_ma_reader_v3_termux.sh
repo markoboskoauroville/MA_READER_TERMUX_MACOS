@@ -342,20 +342,36 @@ CMD="$BIN/mareadweb"
 # top of the letterform and cools into ember at its foot, the way it falls on a
 # page. Removal wears the same shape in ash and violet, cold instead of warm, so
 # the two operations are told apart by temperature before a word is read.
-# Truecolor, and every colour collapses to nothing when this is not a terminal.
+# NO 24-BIT COLOUR. This terminal does not do it, and a 38;2;r;g;b escape comes
+# out as literal rubbish across the screen. Three tiers, decided by asking
+# rather than assuming: 256 colours where tput says there are 256, the basic
+# eight where there are fewer, and nothing at all when this is not a terminal.
+NCOL=0
 if [ -t 1 ]; then
-  c() { printf '\033[38;2;%s;%s;%sm' "$1" "$2" "$3"; }
+  NCOL="$(tput colors 2>/dev/null || echo 8)"
+  case "$NCOL" in ''|*[!0-9]*) NCOL=8 ;; esac
   B=$'\033[1m'; OFF=$'\033[0m'
 else
-  c() { : ; }
   B=''; OFF=''
 fi
-GLOW="$(c 253 232 178)"; GOLD="$(c 250 204  96)"; AMBER="$(c 245 158  46)"
-FLAME="$(c 232 116  44)"; EMBER="$(c 214  78  40)"; COAL="$(c 168  52  44)"
-VIOLET="$(c 167 139 250)"; CYAN="$(c 110 231 255)"
-GREEN="$(c 110 231 183)"; RED="$(c 248 113 113)"; DIM="$(c 108 114 132)"
-ASH1="$(c 203 213 225)"; ASH2="$(c 148 163 184)"
-ASH3="$(c 100 116 139)"; ASH4="$(c  71  85 105)"
+if [ "$NCOL" -ge 256 ] 2>/dev/null; then
+  c() { printf '\033[38;5;%sm' "$1"; }
+  GLOW="$(c 223)"; GOLD="$(c 222)"; AMBER="$(c 214)"
+  FLAME="$(c 208)"; EMBER="$(c 166)"; COAL="$(c 131)"
+  VIOLET="$(c 141)"; CYAN="$(c 87)"
+  GREEN="$(c 114)"; RED="$(c 203)"; DIM="$(c 245)"
+  ASH1="$(c 252)"; ASH2="$(c 247)"; ASH3="$(c 243)"; ASH4="$(c 240)"
+elif [ -t 1 ]; then
+  GLOW=$'\033[1;33m'; GOLD=$'\033[1;33m'; AMBER=$'\033[0;33m'
+  FLAME=$'\033[0;33m'; EMBER=$'\033[0;31m'; COAL=$'\033[0;31m'
+  VIOLET=$'\033[0;35m'; CYAN=$'\033[0;36m'
+  GREEN=$'\033[0;32m'; RED=$'\033[0;31m'; DIM=$'\033[0;37m'
+  ASH1=$'\033[0;37m'; ASH2=$'\033[0;37m'; ASH3=$'\033[0;37m'; ASH4=$'\033[0;37m'
+else
+  GLOW=''; GOLD=''; AMBER=''; FLAME=''; EMBER=''; COAL=''
+  VIOLET=''; CYAN=''; GREEN=''; RED=''; DIM=''
+  ASH1=''; ASH2=''; ASH3=''; ASH4=''
+fi
 KEY="$B$GLOW"; F="$AMBER"; OK="$GREEN"
 RULE="─────────────────────────────────────────────"
 
@@ -447,7 +463,9 @@ do_remove() {
   fi
 
   if [ -d "$APPDIR" ] || [ -f "$CMD" ]; then
-    rm -f "$CMD" 2>/dev/null || true
+    # all three commands, not just the launcher: leaving maread-update behind
+    # means an uninstalled app can still be told to reinstall itself
+    rm -f "$CMD" "$BIN/maread-update" "$BIN/maread-adb" 2>/dev/null || true
     rm -rf "$APPDIR" 2>/dev/null || true
     printf '   %sapp removed%s\n' "$GREEN" "$OFF"
   else
@@ -544,23 +562,118 @@ print(getattr($m,'__version__','') or md.version(n))" 2>/dev/null)"
     printf '   %ssomething is missing, choose y below%s\n\n' "$RED" "$OFF"
   fi
 }
-check_deps
+# The old inline check printed its own table, and the standard dependency
+# table below says the same thing in the agreed shape. Two tables is one too
+# many, so this one only runs when a flag skipped the menu entirely.
+if [ -n "$MODE" ]; then check_deps; fi
+# ----------------------------------------------------- the dependency table --
+# Before anything is installed, one row per dependency: what it is, what it is
+# needed for, and a green + if it is here or a red - if it is not. Optional
+# pieces say so and never block anything.
+dep_have() { command -v "$1" >/dev/null 2>&1; }
+dep_pymod() { "$PYBIN" -c "import $1" >/dev/null 2>&1; }
+PYBIN="$(command -v python3 || command -v python || echo python)"
+
+dep_table() {
+  HAVE=0; MISS=0; MISSREQ=0
+  printf '   %sdependencies%s\n' "$B$GOLD" "$OFF"
+  rule
+  row() {  # name, needed-for, present(0/1), optional(0/1)
+    if [ "$3" = "1" ]; then
+      printf '    %s+%s  %-13s %s%s%s\n' "$GREEN" "$OFF" "$1" "$DIM" "$2" "$OFF"
+      HAVE=$((HAVE+1))
+    else
+      printf '    %s-%s  %-13s %s%s%s\n' "$RED" "$OFF" "$1" "$DIM" "$2" "$OFF"
+      MISS=$((MISS+1)); [ "$4" = "1" ] || MISSREQ=$((MISSREQ+1))
+    fi
+  }
+  dep_have python3 && P1=1 || P1=0
+  row "python"   "runs the server"                      "$P1" 0
+  dep_pymod flask && P2=1 || P2=0
+  row "flask"    "serves the page"                      "$P2" 0
+  dep_pymod edge_tts && P3=1 || P3=0
+  row "edge-tts"  "the free voices"                     "$P3" 0
+  dep_have ffmpeg && P4=1 || P4=0
+  row "ffmpeg"    "exact clip lengths, optional"        "$P4" 1
+  dep_have curl && P5=1 || P5=0
+  row "curl"      "one word updates, optional"          "$P5" 1
+  dep_have am && P6=1 || P6=0
+  row "am"        "opens Chrome by name, optional"      "$P6" 1
+  rule
+  printf '    %s%s of %s present   %s missing%s\n' "$DIM" "$HAVE" "$((HAVE+MISS))" "$MISS" "$OFF"
+  echo ""
+}
+
+# one keypress, no Enter, exactly like every other tool here
+getkey() {
+  if [ -t 0 ]; then
+    old="$(stty -g 2>/dev/null)"
+    stty raw -echo 2>/dev/null
+    k="$(dd bs=1 count=1 2>/dev/null)"
+    stty "$old" 2>/dev/null
+    printf '%s' "$k"
+  else
+    IFS= read -r k || k=""
+    printf '%s' "$k"
+  fi
+}
+
 if [ -z "$MODE" ]; then
+  dep_table
+  if [ "$MISSREQ" -gt 0 ]; then
+    printf '   %s%s required piece(s) missing%s\n' "$RED" "$MISSREQ" "$OFF"
+    printf '    %s[D]%s %sinstall them now, then carry on%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+    printf '    %s[C]%s %scarry on anyway%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+    printf '    %s[Q]%s %sback%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+    printf '\n   %s>%s ' "$AMBER" "$OFF"
+    K="$(getkey)"; echo ""
+    case "$K" in
+      d|D) MODE="online" ;;
+      c|C) MODE="offline" ;;
+      *)   echo ""; exit 0 ;;
+    esac
+  fi
+fi
+
+while [ -z "$MODE" ]; do
   printf '   %swhat now%s\n' "$B$GOLD" "$OFF"
   rule
-  printf '    %sEnter%s  %sinstall, skip the dependency check (fast)%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
-  printf '    %sy%s      %sinstall, and fetch Python, Flask, edge-tts%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
-  printf '    %su%s      %sremove the app, keep the library%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
-  printf '    %sU%s      %sremove the app and the library too%s\n' "$B$RED" "$OFF" "$DIM" "$OFF"
+  printf '    %s[I]%s %sinstall or update, add whatever is missing%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+  printf '    %s[D]%s %sdependencies only, add what the table says%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+  printf '    %s[U]%s %suninstall%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+  printf '    %s[\xe2\x86\xb5]%s %soffline, replace only the code already here%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+  printf '    %s[Q]%s %squit%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
   rule
   printf '\n   %s>%s ' "$AMBER" "$OFF"
-  IFS= read -r ANS || ANS=""
-  case "$ANS" in
-    u*)    MODE="remove" ;;
-    U*)    MODE="purge" ;;
-    [yY]*) MODE="online" ;;
-    *)     MODE="offline" ;;
+  K="$(getkey)"; echo ""
+  case "$K" in
+    i|I)  MODE="online" ;;
+    d|D)  MODE="deps" ;;
+    u|U)
+      printf '\n    %s[A]%s %sthe app only, keep my texts and keys%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+      printf '    %s[E]%s %severything, the library as well%s\n' "$B$RED" "$OFF" "$DIM" "$OFF"
+      printf '    %s[Q]%s %sback%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+      printf '\n   %s>%s ' "$AMBER" "$OFF"
+      K2="$(getkey)"; echo ""
+      case "$K2" in
+        a|A) MODE="remove" ;;
+        e|E) MODE="purge" ;;
+        *)   MODE="" ;;
+      esac ;;
+    q|Q)  echo ""; exit 0 ;;
+    "")   MODE="offline" ;;
+    *)    MODE="" ;;
   esac
+done
+
+if [ "$MODE" = "deps" ]; then
+  printf '   %sfetching what is missing%s\n' "$AMBER" "$OFF"
+  ( pkg update -y || true ) >/dev/null 2>&1 || true
+  pkg install -y python ffmpeg curl >/dev/null 2>&1 || true
+  "$PYBIN" -m pip install --upgrade flask edge_tts >/dev/null 2>&1 || true
+  echo ""
+  dep_table
+  exit 0
 fi
 if [ "$MODE" = "remove" ] || [ "$MODE" = "purge" ]; then
   do_remove "$MODE"
@@ -587,7 +700,7 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
 # a single request to rebuild, and carrying a stale one across an update is
 # how the picker got stuck showing four voices out of nine hundred.
-KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json web_state.json browser.txt"
+KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json web_state.json browser.txt"
 
 STASH=""
 if [ -d "$APPDIR" ]; then
@@ -1639,13 +1752,23 @@ SP_CACHE_FILE = os.path.join(WEB_DIR, "speechify_voices.json")
 # one page. Version it, and treat any other version as if it were not there.
 SP_CACHE_V = 2
 SP_FAIL_FILE = os.path.join(WEB_DIR, "speechify_failed.json")
+SP_USE_FILE = os.path.join(WEB_DIR, "speechify_usage.json")
 
-# Only this shape is a key. The key file people actually keep is a working
-# document with headings and a nickname above each key saying whose it is, and
-# an earlier version of this loader split on whitespace and cheerfully tried to
-# authenticate with the word "gym". Anything that is not sk_ + a long tail is
-# a label, not a credential.
+# Telling a key from a label in a shared key file, WITHOUT ever throwing a key
+# away for its shape.
+#
+# Two mistakes are possible and only one of them is recoverable. Testing a
+# label costs one wasted request. Discarding a real key because a provider
+# quietly changed its format costs the key, silently, with nothing on screen
+# to say so. Google has already done exactly that once, moving Gemini keys
+# from AIza to AQ.
+#
+# So shape only RANKS. Anything on its own line, long enough and with no
+# spaces in it, is a candidate. Ones that look like Speechify keys are tried
+# first; the rest are tried after, and are never condemned to the dead list
+# when they fail, because a long word in a notes file is not a dead key.
 SP_KEY_RE = re.compile(r"^sk_[A-Za-z0-9_\-]{20,}$")
+SP_MAYBE_RE = re.compile(r"^[A-Za-z0-9_\-\.]{20,}$")
 
 # Speechify has no Croatian and no other Slavic voice, checked rather than
 # guessed, so this engine is English and offers exactly the two accents.
@@ -1680,6 +1803,8 @@ _sp_lock = threading.Lock()
 _sp_key = None                # the key in use right now
 _sp_err = ""
 _sp_limited = {}              # key -> unix time it may be tried again
+_sp_skip = set()             # candidates that turned out not to be keys
+_sp_last = None              # the key that carried the last successful call
 
 
 def sp_vkey(voice_id):
@@ -1702,26 +1827,30 @@ def sp_fingerprint(key):
 
 
 def sp_load_keys():
-    """Every key in the file, in file order, each with the label written above
-    it. File order is try order. A line that is not a key becomes the label for
-    the next key, which is how a shared file says whose key is whose."""
+    """Every candidate in the file, strong ones first, each with the label
+    written above it. File order is try order within each tier. A line that is
+    not a candidate becomes the label for the next one, which is how a shared
+    file says whose key is whose."""
     try:
         raw = open(SPEECHIFY_KEY_FILE, encoding="utf-8").read()
     except Exception:
         return []
-    out, seen, label = [], set(), ""
+    strong, weak, seen, label = [], [], set(), ""
     for line in raw.splitlines():
         s = line.strip()
-        if not s:
+        if not s or s == "[DELETED]":
             continue
-        if SP_KEY_RE.match(s):
-            if s not in seen:
-                seen.add(s)
-                out.append({"key": s, "label": label or "unnamed"})
+        if SP_MAYBE_RE.match(s):
+            if s in seen:
+                continue
+            seen.add(s)
+            rec = {"key": s, "label": label or "unnamed",
+                   "strong": bool(SP_KEY_RE.match(s))}
+            (strong if rec["strong"] else weak).append(rec)
             label = ""
-        elif s != "[DELETED]":
+        else:
             label = s[:40]
-    return out
+    return strong + weak
 
 
 def sp_fail_load():
@@ -1730,6 +1859,38 @@ def sp_fail_load():
         return d if isinstance(d, dict) else {}
     except Exception:
         return {}
+
+
+def sp_use_load():
+    try:
+        d = json.load(open(SP_USE_FILE, encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def sp_note_usage(key, chars):
+    """Speechify says what each request cost in billable_characters_count, so
+    keep a running total per key. Shared files get spent unevenly and there is
+    no other way to see which account is carrying everyone."""
+    if not key:
+        return
+    try:
+        chars = int(chars or 0)
+    except (TypeError, ValueError):
+        return
+    d = sp_use_load()
+    fp = sp_fingerprint(key)
+    rec = d.get(fp) or {"chars": 0, "calls": 0}
+    rec["chars"] = int(rec.get("chars", 0)) + max(0, chars)
+    rec["calls"] = int(rec.get("calls", 0)) + 1
+    rec["at"] = int(time.time())
+    d[fp] = rec
+    try:
+        os.makedirs(WEB_DIR, exist_ok=True)
+        json.dump(d, open(SP_USE_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def sp_fail_save(d):
@@ -1785,12 +1946,15 @@ def sp_drop(fp):
 
 
 def sp_live_keys():
-    """The keys still worth trying: not condemned, not resting off a 429."""
+    """The candidates still worth trying: not condemned, not resting off a
+    429, and not already shown to be something other than a key."""
     dead = sp_fail_load()
     now = time.time()
     out = []
     for e in sp_load_keys():
         if sp_fingerprint(e["key"]) in dead:
+            continue
+        if e["key"] in _sp_skip:
             continue
         if _sp_limited.get(e["key"], 0) > now:
             continue
@@ -1842,7 +2006,9 @@ def sp_call(path, method="GET", payload=None, timeout=60, tries=None):
     the very same request is retried on the next one, so a revoked key costs a
     single wasted call and is never tried again in this life."""
     global _sp_err
+    global _sp_last
     live = sp_live_keys()
+    strong = {e["key"]: e.get("strong", True) for e in live}
     tries = tries if tries is not None else max(1, len(live))
     last = "no Speechify key"
     for attempt in range(tries):
@@ -1859,11 +2025,18 @@ def sp_call(path, method="GET", payload=None, timeout=60, tries=None):
                 req.method = method
             body = urllib.request.urlopen(req, timeout=timeout).read()
             _sp_err = ""
+            _sp_last = key
             return json.loads(body.decode("utf-8", "replace")), ""
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
-                sp_condemn(key, label, "rejected (HTTP %d)" % e.code)
-                last = "a key was rejected and marked dead"
+                if strong.get(key, True):
+                    sp_condemn(key, label, "rejected (HTTP %d)" % e.code)
+                    last = "a key was rejected and marked dead"
+                else:
+                    # almost certainly a long word from the file rather than a
+                    # credential. Skip it for the session, do not gravestone it.
+                    _sp_skip.add(key)
+                    last = "skipped something that was not a key"
                 continue                      # same request, next key
             if e.code == 429:
                 sp_note_limited(key)
@@ -2163,6 +2336,7 @@ def synth_unit_speechify(text, voice_id, mp3_path, json_path):
         os.replace(mp3_path + ".part", mp3_path)
     except Exception as e:
         return "could not write the clip: %s" % e
+    sp_note_usage(_sp_last, body.get("billable_characters_count"))
     tokens = sp_tokens(text, body.get("speech_marks") or {})
     engine = "speechify"
     if not tokens:
@@ -2886,6 +3060,7 @@ def _sp_payload(accent, refresh=False):
     dead = sp_fail_load()
     live = [e for e in entries if sp_fingerprint(e["key"]) not in dead]
     cur, cur_label = sp_current()
+    use = sp_use_load()
     failed = []
     for e in entries:
         fp = sp_fingerprint(e["key"])
@@ -2912,6 +3087,16 @@ def _sp_payload(accent, refresh=False):
             "keys": len(entries),
             "live": len(live),
             "failed": failed,
+            "keyList": [{"fp": sp_fingerprint(e["key"]),
+                         "mask": sp_mask(e["key"]),
+                         "label": e.get("label", ""),
+                         "strong": bool(e.get("strong", True)),
+                         "dead": sp_fingerprint(e["key"]) in dead,
+                         "using": e["key"] == cur,
+                         "chars": int((use.get(sp_fingerprint(e["key"])) or {}).get("chars", 0)),
+                         "calls": int((use.get(sp_fingerprint(e["key"])) or {}).get("calls", 0))}
+                        for e in entries],
+            "charsTotal": sum(int((v or {}).get("chars", 0)) for v in use.values()),
             "ready": bool(cur),
             "using": sp_mask(cur),
             "usingLabel": cur_label,
@@ -3123,8 +3308,11 @@ def api_sp_keys():
     else:
         data = request.get_json(force=True, silent=True) or {}
         raw = data.get("text", "")
-    if not any(SP_KEY_RE.match(ln.strip()) for ln in raw.splitlines()):
-        return jsonify({"error": "no Speechify keys (sk_...) in that file"}), 400
+    # Accept on CANDIDATES, not on shape. Refusing a file because nothing in
+    # it starts with sk_ is the same mistake as discarding a key for its
+    # shape, one step earlier.
+    if not any(SP_MAYBE_RE.match(ln.strip()) for ln in raw.splitlines()):
+        return jsonify({"error": "nothing in that file looks like a key"}), 400
     try:
         os.makedirs(WEB_DIR, exist_ok=True)
         with open(SPEECHIFY_KEY_FILE, "w", encoding="utf-8") as fh:
@@ -3166,7 +3354,7 @@ def api_sp_drop():
 @app.route("/api/speechify/forget", methods=["POST"])
 def api_sp_forget():
     global SP_VOICES
-    for p in (SPEECHIFY_KEY_FILE, SP_CACHE_FILE, SP_FAIL_FILE):
+    for p in (SPEECHIFY_KEY_FILE, SP_CACHE_FILE, SP_FAIL_FILE, SP_USE_FILE):
         try:
             os.remove(p)
         except Exception:
@@ -3496,10 +3684,20 @@ def _banner():
     def c(code, text):
         return ("\033[%sm%s\033[0m" % (code, text)) if tty_ok else text
 
-    fire = "38;2;255;138;60"
-    ember = "38;2;214;92;48"
-    ash = "38;2;120;128;146"
-    ink = "38;2;205;208;214"
+    # NO 24-BIT COLOUR here either: 256 where the terminal has 256, the
+    # basic eight otherwise, nothing when this is not a terminal.
+    ncol = 0
+    if tty_ok:
+        try:
+            import curses
+            curses.setupterm()
+            ncol = curses.tigetnum("colors") or 0
+        except Exception:
+            ncol = 8
+    if ncol >= 256:
+        fire, ember, ash, ink = "38;5;208", "38;5;166", "38;5;245", "38;5;252"
+    else:
+        fire, ember, ash, ink = "0;33", "0;31", "0;37", "0;37"
     art = [
         "   __  __   _     ___ ___   _   ___  ___ ___ ",
         "  |  \\/  | /_\\   | _ \\ __| /_\\ |   \\| __| _ \\",
@@ -4647,6 +4845,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <div class="keyerr" id="spKeyErr"></div>
     </div>
     <div class="spstate" id="spState"></div>
+    <div id="spList"></div>
     <div id="spDead"></div>
     <div class="langhint">One key per line, with a name above it saying whose
       it is; anything that is not a key is read as a label, so a heading or a
@@ -5309,6 +5508,40 @@ function spWhen(ts){
   if(d < 86400) return Math.floor(d/3600) + " h ago";
   return Math.floor(d/86400) + " d ago";
 }
+function fmtChars(n){
+  n = n|0;
+  if(n >= 1000000) return (n/1000000).toFixed(1) + "M";
+  if(n >= 1000) return Math.round(n/1000) + "k";
+  return String(n);
+}
+/* Every key, not only the dead ones, and what each has spent. Shared files
+   get used unevenly and there is no other way to see whose account is
+   carrying everyone. */
+function renderSpKeyList(){
+  const wrap = $("#spList"); if(!wrap) return;
+  const list = (ST.spInfo && ST.spInfo.keyList) || [];
+  wrap.innerHTML = "";
+  if(!list.length) return;
+  const h = document.createElement("div");
+  h.className = "deadhead";
+  const tot = (ST.spInfo && ST.spInfo.charsTotal) || 0;
+  h.textContent = list.length + " keys" + (tot ? "  \u00b7  " + fmtChars(tot) + " characters spent" : "");
+  wrap.appendChild(h);
+  list.forEach(k=>{
+    const row = document.createElement("div");
+    row.className = "deadrow";
+    const meta = document.createElement("div");
+    meta.className = "dmeta";
+    const tag = k.using ? " \u00b7 in use" : (k.dead ? " \u00b7 dead" : "");
+    const weak = k.strong ? "" : " \u00b7 not key shaped";
+    meta.innerHTML = `<div class="dname">${k.label || "unnamed"}</div>` +
+      `<div class="dsub">${k.mask}${tag}${weak}` +
+      `${k.chars ? " \u00b7 " + fmtChars(k.chars) + " chars, " + k.calls + " calls" : ""}</div>`;
+    row.appendChild(meta);
+    if(k.using) row.style.borderColor = "var(--tune)";
+    wrap.appendChild(row);
+  });
+}
 function renderSpDead(){
   const wrap = $("#spDead"); if(!wrap) return;
   const list = (ST.spInfo && ST.spInfo.failed) || [];
@@ -5379,7 +5612,8 @@ function applySpInfo(d){
   ST.spVoices = (d.voices || []);
   if(d.perSet) ST.spPerSet = d.perSet;
   spClampSet();
-  renderSpAccents(); renderSpGrid(); renderSpKeys(); renderSpDead();
+  renderSpAccents(); renderSpGrid(); renderSpKeys();
+  renderSpKeyList(); renderSpDead();
   if(ST.engine === "speechify") renderVoices();
 }
 function loadSpeechify(){
@@ -7516,7 +7750,7 @@ function boot(){
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
-    renderSpDead(); mediaSetup(); wireFloat(); wireFsWatch();
+    renderSpKeyList(); renderSpDead(); mediaSetup(); wireFloat(); wireFsWatch();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();

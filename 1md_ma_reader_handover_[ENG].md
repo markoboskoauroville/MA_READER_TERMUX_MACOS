@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 17.8.2026, commit 68f6432. This file is rewritten on
+State of the app as of 17.8.2026, commit 60647c5 plus the v34 merge. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -268,6 +268,55 @@ the app behaves exactly as if the feature were not there. Routes under
 kept across an install.
 
 Not part of the reading engine. If porting the reader elsewhere, strip it.
+## Brought over from the v34 line
+
+v34 lives in the private MA_READER_SPEECHIFY repo. It is a PATCHER over the
+same v26 this was forked from, not a standalone app, so the two are siblings
+rather than ancestor and descendant. Diffed 17.8.2026. Three things it had
+right that this did not:
+
+    NO 24-BIT COLOUR       this terminal does not do it and a 38;2;r;g;b
+                           escape prints as literal rubbish. Three tiers now,
+                           decided by asking tput rather than assuming: 256
+                           where there are 256, the basic eight below that,
+                           and no colour at all when not a terminal. Both the
+                           installer and the server banner were offenders.
+    KEYS NEVER DROPPED     shape only RANKS candidates now, it never discards
+      FOR THEIR SHAPE      one. Testing a label costs one wasted request;
+                           discarding a real key because a provider changed
+                           its format loses the key silently, and Google has
+                           already done that once. Anything on its own line,
+                           20 characters or more with no spaces, is tried;
+                           sk_ shaped ones first, the rest after. A non sk_
+                           candidate that fails is skipped for the session
+                           rather than written to the dead list, because a
+                           long word in a notes file is not a dead key.
+    WHAT EACH KEY SPENT    counted from Speechify's own
+                           billable_characters_count and shown per key in
+                           Settings. Shared files get used unevenly and there
+                           was no other way to see whose account is carrying
+                           everyone.
+
+Not taken from v34: it removed the word pause entirely because it never worked
+there. Here it was fixed instead, see the engine notes above.
+
+Also fixed while in there: the installer menu is now the standard one, and
+uninstall removes all three commands rather than only the launcher, which had
+left maread-update behind able to reinstall an uninstalled app.
+
+## The menu
+
+    [I]  install or update
+    [D]  dependencies only, add what the table says
+    [U]  uninstall, then [A] app only or [E] everything
+    [enter]  offline, replace only the code already here
+    [Q]  quit
+
+One keypress, no Enter, no command line switches. Before any install, the
+dependency table: one row per piece, what it is needed for, green + if present
+and red - if not, optional ones labelled and never blocking. If a required
+piece is missing it offers [D] fetch it, [C] carry on anyway, [Q] back.
+
 ## Traps worth keeping
 
     a running server keeps serving old code out of memory after an update, so
