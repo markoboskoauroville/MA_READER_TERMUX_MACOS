@@ -1,5 +1,8 @@
 # Speechify Engine, Handoff
 
+Revised 17.8.2026. Section 5 changed: the picker no longer holds four voices,
+it PAGES the whole catalogue four at a time. Everything else stands.
+
 How to build a Speechify TTS engine with a lazy self healing key ring.
 Everything here was verified against the live API on 12.8.2026 with 21 real
 keys, not read from documentation. Where a fact cost a bug, the bug is written
@@ -364,6 +367,14 @@ Constraints that came from the app, and are worth keeping:
 
 * Room for **four** voice buttons at the top of a phone screen, no more.
 * They arrive in **pairs**, one female one male, like the Edge language rows.
+* But four is a WINDOW, not the whole list. There are 33 en-GB and 82 en-US
+  voices and no way to tell from a name whether you will like one, so the
+  picker pages through the whole catalogue four at a time, with arrows, a
+  "n / total" count and a row of numbered buttons so any page is one tap away.
+  `pick()` therefore returns EVERY voice for the accent, ordered, zipped
+  female male female male so any four consecutive entries are two of each.
+  Slice it in the front end. Order: Speechify's own curated set first, then
+  the four it calls popular, then the rest by name.
 * **English only.** Speechify has no Croatian and no other Slavic voice. This
   was checked against the catalogue, not assumed. Do not offer a language
   picker; offer two accent buttons, UK and US.

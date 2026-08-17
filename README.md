@@ -111,6 +111,11 @@ Texts and their per-sentence clips live in `~/.maread`, shared with the
 terminal MA Reader. Clips are immutable and cached per voice, so changing a
 pause or the speed never costs a synthesis.
 
+## Handover
+
+[`1md_ma_reader_handover_[ENG].md`](1md_ma_reader_handover_%5BENG%5D.md) is the
+state of the whole app, rewritten on every push. Read it first.
+
 ## Reusing the Speechify engine elsewhere
 
 The key ring, the pagination fix, the voice picker and the speech-mark handling
