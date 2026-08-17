@@ -702,19 +702,111 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # how the picker got stuck showing four voices out of nine hundred.
 KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json web_state.json browser.txt"
 
+# --------------------------------------------------- is it running already? --
+# A live server holds the old code in memory and keeps serving it after every
+# file underneath it has changed, so an install over the top looks like it did
+# nothing at all. It also has the files open while they are being replaced.
+#
+# The last version killed it silently. That was the wrong call: the person at
+# the keyboard may be in the middle of listening to something. So it is
+# detected, said plainly, and killed only when asked.
+# Finding the server, without finding things that merely MENTION it.
+#
+# A bare "pgrep -f $APPDIR/server.py" matches far too much: an editor with the
+# file open, a tail on it, and worst of all any shell whose command line
+# happens to contain that path, which includes the installer itself in some
+# invocations. It would then refuse to run because it had detected itself.
+#
+# The server is always started as: python <appdir>/server.py
+# So require BOTH: the path is in the command line, AND the first token is a
+# python. A shell is /bin/sh or /bin/bash and is excluded by that alone.
+srv_pids() {
+  for p in $(pgrep -f "$APPDIR/server.py" 2>/dev/null); do
+    [ "$p" = "$$" ] && continue
+    [ "$p" = "$PPID" ] && continue
+    c="$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)"
+    [ -z "$c" ] && continue
+    first="${c%% *}"
+    case "${first##*/}" in
+      python|python2|python2.*|python3|python3.*) ;;
+      *) continue ;;
+    esac
+    case "$c" in *"$APPDIR/server.py"*) echo "$p" ;; esac
+  done
+}
+
+srv_stop() {   # returns 0 if nothing is running afterwards
+  P="$(srv_pids)"
+  [ -z "$P" ] && return 0
+  kill $P 2>/dev/null || true
+  n=0
+  while [ "$n" -lt 20 ]; do
+    sleep 0.25
+    [ -z "$(srv_pids)" ] && return 0
+    n=$((n+1))
+  done
+  P="$(srv_pids)"
+  [ -n "$P" ] && kill -9 $P 2>/dev/null || true
+  n=0
+  while [ "$n" -lt 12 ]; do
+    sleep 0.25
+    [ -z "$(srv_pids)" ] && return 0
+    n=$((n+1))
+  done
+  [ -z "$(srv_pids)" ]
+}
+
+RUNNING="$(srv_pids)"
+if [ -n "$RUNNING" ]; then
+  NPID="$(printf '%s\n' "$RUNNING" | wc -l | tr -d ' ')"
+  PORTNOW=""
+  [ -s "$APPDIR/port.txt" ] && PORTNOW="$(cat "$APPDIR/port.txt" 2>/dev/null)"
+  echo ""
+  printf '   %sMA Reader is running right now%s\n' "$B$AMBER" "$OFF"
+  rule
+  if [ -n "$PORTNOW" ]; then
+    printf '    %sserving on%s   %shttp://localhost:%s%s\n' "$DIM" "$OFF" "$ASH1" "$PORTNOW" "$OFF"
+  fi
+  printf '    %sprocess%s      %s%s%s\n' "$DIM" "$OFF" "$ASH1" "$(printf '%s' "$RUNNING" | tr '\n' ' ')" "$OFF"
+  printf '    %sthe files cannot be replaced underneath it, and it would go on%s\n' "$DIM" "$OFF"
+  printf '    %sserving the old app out of memory even after they changed.%s\n' "$DIM" "$OFF"
+  rule
+  printf '    %s[K]%s %skill it and install%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+  printf '    %s[Q]%s %sleave it alone, change nothing%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+  echo ""
+  if [ -t 0 ]; then
+    printf '   %s>%s ' "$AMBER" "$OFF"
+    KK="$(getkey)"; echo ""
+  else
+    # not a terminal, so this is maread-update or a script. Nobody is there to
+    # answer, and it was asked to install, so take that as the answer.
+    KK="K"
+    printf '   %snot a terminal, so stopping it and carrying on%s\n' "$DIM" "$OFF"
+  fi
+  case "$KK" in
+    k|K)
+      printf '   %sstopping it%s\n' "$CYAN" "$OFF"
+      if srv_stop; then
+        printf '   %sstopped%s\n' "$GREEN" "$OFF"
+      else
+        echo ""
+        printf '   %sit will not stop. Nothing has been changed.%s\n' "$B$RED" "$OFF"
+        printf '   %sClose the Termux session that is running it, or reboot,%s\n' "$DIM" "$OFF"
+        printf '   %sand run this again.%s\n' "$DIM" "$OFF"
+        echo ""
+        exit 1
+      fi ;;
+    *)
+      echo ""
+      printf '   %sleft running. Nothing has been changed.%s\n' "$DIM" "$OFF"
+      echo ""
+      exit 0 ;;
+  esac
+  command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock >/dev/null 2>&1 || true
+fi
+
 STASH=""
 if [ -d "$APPDIR" ]; then
-  # 1. stop the server. A running Flask holds the old code in memory and will
-  #    happily keep serving it after every file underneath it has changed.
-  PIDS="$(pgrep -f "$APPDIR/server.py" 2>/dev/null || true)"
-  if [ -n "$PIDS" ]; then
-    printf '   %sstopping the server that is already running%s\n' "$CYAN" "$OFF"
-    kill $PIDS 2>/dev/null || true
-    sleep 1
-    PIDS="$(pgrep -f "$APPDIR/server.py" 2>/dev/null || true)"
-    [ -n "$PIDS" ] && { kill -9 $PIDS 2>/dev/null || true; sleep 1; }
-  fi
-  command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock >/dev/null 2>&1 || true
 
   # 2. carry the keys and settings out
   STASH="$(mktemp -d "${TMPDIR:-/tmp}/maread-keep.XXXXXX")"

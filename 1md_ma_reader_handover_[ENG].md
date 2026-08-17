@@ -347,6 +347,34 @@ Also fixed while in there: the installer menu is now the standard one, and
 uninstall removes all three commands rather than only the launcher, which had
 left maread-update behind able to reinstall an uninstalled app.
 
+## Installing while it is running
+
+A live server holds the old code in memory and keeps serving it after every
+file underneath has changed, which is how an update comes to look like it did
+nothing. The installer used to kill it silently. It now says so and asks:
+
+    MA Reader is running right now
+      serving on   http://localhost:8081
+      process      12345
+      [K] kill it and install
+      [Q] leave it alone, change nothing
+
+Q changes nothing and exits. K stops it, TERM first and KILL after five
+seconds, and only installs once nothing is left running. If it cannot be
+stopped at all, nothing is touched and it exits 1 rather than installing over
+a live server.
+
+When there is no terminal, which is how maread-update runs it, there is nobody
+to ask and it was asked to install, so it stops the server, says that it did,
+and carries on.
+
+Finding the server is fussier than it looks. A bare pgrep on the path also
+matches an editor with the file open, a tail on it, or any shell whose command
+line mentions the path, including the installer itself in some invocations,
+which made it refuse to run because it had detected itself. So it requires the
+path in the command line AND the first token to be a python, and never matches
+its own pid or its parent.
+
 ## The menu
 
     [I]  install or update
