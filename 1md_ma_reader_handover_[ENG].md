@@ -185,6 +185,89 @@ media session instead of throwing a key at whatever is listening.
 TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
+
+## Every setting
+
+Generated from the shipped page, so it cannot drift. All live in the
+Settings sheet and all are remembered.
+
+    Show both engines        bothTog
+    Auto-play on open        autoplayTog
+    Remember position        resumeTog
+    Focus mode               focusTog
+    Loop                     loopBtn
+    Reverse swipe            swipeTog
+    Floating paste button    floatTog
+    Tap text to paste        tapPasteTog
+    Resume my music          bgResumeTog
+    Test it                  bgTestBtn
+    Open in Chrome           chromeTog
+    AI title and summary     aiMetaTog
+
+## Every route
+
+Generated from server.py.
+
+  reading
+    /api/audio/<tid>/<vkey>/<int:idx>.mp3 GET
+    /api/bounds/<tid>/<vkey>/<int:idx> GET
+    /api/langs                         GET
+    /api/prepare                       POST
+    /api/state                         GET,POST
+    /api/voices                        GET
+
+  library
+    /api/library                       GET
+    /api/library/<tid>                 GET
+    /api/library/<tid>/delete          POST
+    /api/library/<tid>/enrich          POST
+    /api/library/delete_all            POST
+    /api/library/delete_bulk           POST
+
+  offline
+    /api/export                        POST
+    /api/offline/clip/<name>/<int:idx>.mp3 GET
+    /api/offline/delete                POST
+    /api/offline/delete_all            POST
+    /api/offline/delete_bulk           POST
+    /api/offline/list                  GET
+    /api/offline/open/<name>           GET
+    /api/offline/pos                   POST
+    /api/offline/pos/<name>            GET
+
+  speechify
+    /api/speechify/accent              POST
+    /api/speechify/drop                POST
+    /api/speechify/forget              POST
+    /api/speechify/keys                POST
+    /api/speechify/refresh             POST
+    /api/speechify/revive              POST
+    /api/speechify/status              GET
+
+  gemini
+    /api/gemini/forget                 POST
+    /api/gemini/key                    POST
+    /api/gemini/status                 GET
+    /api/gemini/usage/reset            POST
+
+  system
+    /                                  GET
+    /api/browser                       GET,POST
+    /api/mediakey                      POST
+    /api/mediastatus                   GET
+    /manifest.webmanifest              GET
+    /static/<path:fn>                  GET
+
+## The AI title and summary (Gemini)
+
+Carried over from earlier versions and still shipped. A Gemini key, loaded by
+file picker in Settings, gives each saved text a short title and summary in
+the Archive instead of its first line. Optional in every sense: with no key
+the app behaves exactly as if the feature were not there. Routes under
+/api/gemini, key in gemini_key.txt, usage counted in gemini_state.json, both
+kept across an install.
+
+Not part of the reading engine. If porting the reader elsewhere, strip it.
 ## Traps worth keeping
 
     a running server keeps serving old code out of memory after an update, so
