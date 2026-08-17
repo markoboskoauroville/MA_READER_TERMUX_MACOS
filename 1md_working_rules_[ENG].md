@@ -142,6 +142,36 @@ quietly doing both.
 
 ---
 
+## 3b. The wrong chat sanity check
+
+Marko runs many projects in many chats at once, and sometimes types into the
+wrong one. It is easily done and costs nothing IF it is caught in one line.
+
+Before starting ANY work, check the request belongs to the project this chat
+has been building. If it names a different app, a different repo, a different
+domain, or a screen that has never appeared here, STOP.
+
+Say it plainly and immediately:
+
+    I think you are in the wrong chat. This one is <project>.
+    Did you mean to send that to <the other thing>?
+
+Then WAIT. Do not start work. Do not go looking through his other repositories
+to be helpful. Do not begin anyway on the theory that it might be related. A
+question that costs him one word to answer is far cheaper than work begun on
+the wrong thing, and much cheaper than a change made to an app nobody in this
+chat has read.
+
+THIS CHAT IS: MA Reader Termux, the repo ma-reader-thermux, a Flask server in
+Termux read in a browser at localhost. Anything about a Streamlit app, a
+transcription app, an Android keyboard, a book, a website or a music project
+belongs somewhere else.
+
+The same applies in reverse. If work here starts drifting toward another
+project, say so rather than quietly widening the scope.
+
+---
+
 ## 4. Listen to Baba
 
 When Marko states a requirement, implement THAT requirement. Not a
