@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 17.8.2026, commit 60647c5 plus the v34 merge. This file is rewritten on
+State of the app as of 17.8.2026, commit 8f0b789, everything in it verified. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -227,6 +227,17 @@ Takes the same per-item lock the article cache takes. Without it, a fast thumb
 tapping four voices produced five failures out of ten and served a
 half-written file.
 
+Proven on BOTH engines, 17.8.2026, Speechify against a real 21 key file that
+was shredded afterwards. Edge: four voices, cached copy served 2800 times
+faster than the first. Speechify: page one of the UK catalogue, plus Jean from
+page eleven of the US list to show it is not only the first page. Ten
+simultaneous taps returned 10 of 10 on each engine with every voice one
+consistent size. A key revoked mid-preview rolled forward and still delivered.
+With all 21 keys dead, previews already made still played from disk and a new
+one failed cleanly leaving no empty file. Forget removed the Speechify
+previews and kept the Edge ones. The usage counter recorded 27 characters for
+"This is Beatrice. Hi there.", which is exactly its length.
+
 ### The voice strip can be switched off
 
 "Voice buttons on top", in the Edge card, on by default. Off and the whole row
@@ -375,7 +386,13 @@ piece is missing it offers [D] fetch it, [C] carry on anyway, [Q] back.
 
     the Chrome intent is tested against a simulated am, not a real phone
     maread-adb is untested on a real phone; Baba has Developer options
+    the browser side of full screen, the floating button and the paste catcher
+      are checked by code inspection and simulation only. They live in Chrome,
+      not in a sandbox, so Baba is the first to actually see them
     US voice pages 20 and 21 are not two women and two men, because there are
       45 women and 37 men and the tail runs out
-    MA_READER_SPEECHIFY (private) holds a v34 line that went further than the
-      v26 this was forked from. Not yet diffed against this v3.
+    MA_READER_SPEECHIFY (private) also holds a v34 line. Diffed 17.8.2026 and
+      merged, see above. It is a patcher over the same v26, so it is a sibling
+      of this line rather than ahead of it. Nothing further outstanding there.
+    mareader, the old Streamlit repo, is to be deleted by Baba. The token here
+      lacks delete_repo scope, so it cannot be done from this side.
