@@ -8,6 +8,12 @@ a bug.
     install   3sh_i_ma_reader_v3_termux.sh
     edition   v3
 
+## Before anything else
+
+Read 1md_working_rules_[ENG].md. Three progressing tests before shipping, real
+keys only and shredded after, one spoon at a time, and say what was not
+tested. Those rules bind whoever picks this up next.
+
 ## What it is
 
 A reader for Termux on Android. Paste text, it speaks it and lights each word

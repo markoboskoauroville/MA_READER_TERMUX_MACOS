@@ -111,6 +111,12 @@ Texts and their per-sentence clips live in `~/.maread`, shared with the
 terminal MA Reader. Clips are immutable and cached per voice, so changing a
 pause or the speed never costs a synthesis.
 
+## How work is done here
+
+[`1md_working_rules_[ENG].md`](1md_working_rules_%5BENG%5D.md) is binding:
+three progressing tests before anything ships, real keys only and shredded
+after, one step at a time, and every delivery says what it did NOT test.
+
 ## Handover
 
 [`1md_ma_reader_handover_[ENG].md`](1md_ma_reader_handover_%5BENG%5D.md) is the
