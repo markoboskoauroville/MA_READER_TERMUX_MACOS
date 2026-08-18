@@ -440,6 +440,21 @@ after it. The eye had to hunt for the line each time. A teleprompter does not
 make you hunt: the line you are on is always in the same place and everything
 below it is what is coming.
 
+THE JUMP IS INSTANT. A smooth scroll is a small animation, and an animation
+is a delay by another name: the line slides for a few hundred milliseconds
+while the voice is already speaking it, so the eye arrives after the ear. It
+lands at once instead. No smooth scroll survives anywhere in the reading path.
+
+If a pause before the jump is wanted it is a SETTING, in seconds, rather than
+something baked into an easing curve. The "scroll delay" stepper sits beside
+the sentence pause in the first row of Settings, 0.00 to 3.00 in steps of
+0.05, and 0.00 is the default: nothing at all between the sentence starting
+and the page moving.
+
+A pending delayed jump is cancelled the moment another sentence begins, and by
+anything that stops the reading, so a fast passage cannot queue a row of jumps
+that all land together. Only the current sentence ever lands.
+
 TOP_PAD is 12px of air below the top edge. A move smaller than 2px is skipped,
 so an already-placed sentence does not jitter. The sentence jump is NEVER
 throttled: it is the main movement of the app and a sentence change is a

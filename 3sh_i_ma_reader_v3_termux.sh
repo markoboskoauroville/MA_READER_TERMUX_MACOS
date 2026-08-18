@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.16
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.17
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.16%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.17%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2565,7 +2565,7 @@ def ensure_unit(tid, vkey, idx):
         return mp3, js, ""
 
 # ---------- state ----------
-_DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
+_DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
@@ -2609,6 +2609,7 @@ def load_state():
         st[key] = max(lo, min(hi, v))
     # the same limits the player itself uses, or the server would quietly
     # shrink a size the browser considers perfectly legal
+    _num("lag", 0.0, 3.0, 0.0)
     _num("speed", 0.5, 3.0, 1.0)
     _num("volume", 0, 100, 100, 0)
     _num("size", 1, 14, 2, 0)
@@ -5124,7 +5125,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.16 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.17 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5251,6 +5252,11 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="yt-mini" data-step="gap" data-d="-1" title="Shorter pause between sentences">&#8722;</button>
       <button class="yt-num" data-reset="gap" title="Tap to reset to 0.00"><b id="gapNum">0.00</b><i>sentences</i></button>
       <button class="yt-mini" data-step="gap" data-d="1" title="Longer pause between sentences">+</button>
+    </div>
+    <div class="ytstep setstep">
+      <button class="yt-mini" data-step="lag" data-d="-1" title="Jump sooner">&#8722;</button>
+      <button class="yt-num" data-reset="lag" title="Tap to reset to 0.00"><b id="lagNum">0.00</b><i>scroll delay</i></button>
+      <button class="yt-mini" data-step="lag" data-d="1" title="Wait longer before jumping">+</button>
     </div>
   </div>
   <!-- Three panes, not two engines. A person looking for the font should
@@ -5561,6 +5567,7 @@ const SIZE_MIN = 1, SIZE_MAX = 14;
    and the two overlap by that much. */
 const SPEED_MIN = 0.5, SPEED_MAX = 3.0, SPEED_STEP = 0.05;
 const GAP_MIN = -1.0, GAP_MAX = 3.0, GAP_STEP = 0.05;
+const LAG_MIN = 0.00, LAG_MAX = 3.00, LAG_STEP = 0.05;
 /* The pause between WORDS is a different animal from the pause between
    sentences. Sentences are separate clips, so the space between them is ours
    to make. The words inside one clip are not: the voice has already spoken
@@ -5609,7 +5616,7 @@ const ST = {
   mode: "read",
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
-  speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
+  speed: 1.0, volume: 100, gap: 0.0, lag: 0.0, wgap: 0.0, loop: false,
   size: 4, autoplay: false, focus: false,
   theme: "night", font: "serif", lineheight: 3, wordhl: true,
   rgbSent: [255,217,59], rgbWord: [226,59,78], rgbFont: [255,255,255],
@@ -6518,14 +6525,36 @@ let lastAutoScroll = 0;
    change is a deliberate event, not the per-word chatter that the throttle
    exists to damp. */
 const TOP_PAD = 12;
+
+/* The jump is INSTANT. A smooth scroll is a small animation, and an animation
+   is a delay by another name: the line slides for a few hundred milliseconds
+   while the voice is already speaking it, so the eye arrives after the ear.
+   It lands at once instead, and the page is simply where it should be.
+
+   If a pause before the jump is wanted it is a SETTING, in seconds, rather
+   than something baked into an easing curve. At 0.00 there is nothing at all
+   between the sentence starting and the page moving.
+
+   A pending delayed jump is cancelled the moment another sentence begins, so
+   a fast passage cannot queue a row of jumps that all land together. */
+let lagTimer = null;
+function cancelLag(){ if(lagTimer){ clearTimeout(lagTimer); lagTimer = null; } }
+
 function sentenceToTop(el, scroller){
+  cancelLag();
   if(!el) return;
-  const sc = $(scroller || "#readerScroll"); if(!sc) return;
-  const r = el.getBoundingClientRect(), pr = sc.getBoundingClientRect();
-  const delta = r.top - (pr.top + TOP_PAD);
-  if(Math.abs(delta) < 2) return;        /* already there, do not jitter */
-  lastAutoScroll = Date.now();
-  sc.scrollBy({top: delta, behavior: "smooth"});
+  const go = ()=>{
+    lagTimer = null;
+    const sc = $(scroller || "#readerScroll"); if(!sc) return;
+    const r = el.getBoundingClientRect(), pr = sc.getBoundingClientRect();
+    const delta = r.top - (pr.top + TOP_PAD);
+    if(Math.abs(delta) < 2) return;      /* already there, do not jitter */
+    lastAutoScroll = Date.now();
+    sc.scrollBy({top: delta, behavior: "auto"});
+  };
+  const lag = +(ST.lag || 0);
+  if(lag > 0) lagTimer = setTimeout(go, lag * 1000);
+  else go();
 }
 
 function keepWordVisible(el, scroller){
@@ -6544,7 +6573,7 @@ function keepWordVisible(el, scroller){
      sentence is deliberately not used as the anchor here: it starts above the
      top edge by definition, and going back to it would undo the reading. */
   lastAutoScroll = now;
-  sc.scrollBy({top: wr.top - (pr.top + TOP_PAD), behavior: "smooth"});
+  sc.scrollBy({top: wr.top - (pr.top + TOP_PAD), behavior: "auto"});
 }
 
 function mdUnlight(){
@@ -6760,6 +6789,7 @@ function highlightWordAt(i, mediaTime){
   if(k >= 0) keepWordVisible(spans[k].el);
 }
 function clearWords(i){
+  cancelLag();
   CLK.lastWord = -2;
   if(MD.mapped){
     for(let j = 0; j < MDLIT.now.length; j++) MDLIT.now[j].classList.remove("now");
@@ -7216,6 +7246,9 @@ function applyVolume(){
   try{ OFF.audio.volume = ST.volume/100; OFF.audioB.volume = ST.volume/100; }
   catch(e){}
 }
+function applyLag(){
+  setText("#lagNum", ST.lag.toFixed(2));
+}
 function applyGap(){
   const t = ST.gap.toFixed(2);
   setText("#gapVal", t); setText("#gapNum", t); setText("#gapNum2", t);
@@ -7305,6 +7338,7 @@ function applyWordHl(){
 function resetTune(kind){
   if(kind==="speed"){ ST.speed = 1.0; applySpeed(); toast("Speed 1.00"); }
   else if(kind==="gap"){ ST.gap = 0.0; applyGap(); toast("Sentence pause 0.00"); }
+  else if(kind==="lag"){ ST.lag = 0.0; applyLag(); toast("Jumps at once"); }
 
   else return;
   persist();
@@ -7318,6 +7352,10 @@ function step(kind, d){
     ST.gap = Math.max(GAP_MIN, Math.min(GAP_MAX,
                Math.round((ST.gap + d*GAP_STEP)*100)/100));
     applyGap();
+  } else if(kind==="lag"){
+    ST.lag = Math.max(LAG_MIN, Math.min(LAG_MAX,
+                Math.round((ST.lag + d*LAG_STEP)*100)/100));
+    applyLag();
   } else if(kind==="size"){
     ST.size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, ST.size + d)); applySize();
   } else if(kind==="lh"){
@@ -7616,7 +7654,7 @@ let persistT=null, persistDue=null;
 let booted = false;
 function stateBody(){
   return JSON.stringify({voice:ST.voice, speed:ST.speed, volume:ST.volume,
-        gap:ST.gap, wgap:ST.wgap, loop:ST.loop, size:ST.size, autoplay:ST.autoplay,
+        gap:ST.gap, lag:ST.lag, wgap:ST.wgap, loop:ST.loop, size:ST.size, autoplay:ST.autoplay,
         focus:ST.focus, theme:ST.theme, font:ST.font,
         lineheight:ST.lineheight, wordhl:ST.wordhl,
         rgbSent:ST.rgbSent, rgbWord:ST.rgbWord, rgbFont:ST.rgbFont, rgbText:ST.rgbText,
@@ -8955,6 +8993,8 @@ function boot(){
     ST.speed = st.speed||1.0; ST.volume = st.volume??100;
     ST.gap = Math.max(GAP_MIN, Math.min(GAP_MAX,
                (typeof st.gap === "number") ? st.gap : 0.0));
+    ST.lag = Math.max(LAG_MIN, Math.min(LAG_MAX,
+               (typeof st.lag === "number") ? st.lag : 0.0));
     ST.speed = Math.max(SPEED_MIN, Math.min(SPEED_MAX, ST.speed));
     ST.loop = !!st.loop;
     ST.size = st.size||13; ST.autoplay = (st.autoplay!==false); ST.focus = !!st.focus;
@@ -8980,7 +9020,7 @@ function boot(){
     renderEdgeGrid(); renderSpKeyList(); renderSpDead();
     mediaSetup(); wireFloat(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
-    applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
+    applySpeed(); applyVolume(); applyGap(); applyLag(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
     ST.aimeta = !!st.aimeta; ST.resume = (st.resume!==false);
     ST.gemini = {configured:false, last_error:""};
