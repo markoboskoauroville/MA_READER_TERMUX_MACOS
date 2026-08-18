@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 17.8.2026, commit 8f0b789, everything in it verified. This file is rewritten on
+State of the app as of 18.8.2026, v3.11, everything in it verified. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -39,10 +39,11 @@ files back. The library at ~/.maread is never touched.
 
 ## Shape
 
-The installer is one shell script holding exactly two files:
+The installer is one shell script holding exactly three files:
 
     ~/.maread-web/server.py            Flask, about 3000 lines
     ~/.maread-web/static/index.html    one file, all CSS and JS inline
+    ~/.maread-web/static/marked.umd.js the Markdown parser, vendored whole
 
 Commands land in $PREFIX/bin: mareadweb, maread-update, maread-adb.
 Texts and clips live in ~/.maread, shared with the terminal MA Reader.
@@ -196,7 +197,88 @@ TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
 
-## The version moves on every build
+## Markdown, phase 1 of 4: it renders
+
+The reader shows pasted Markdown FORMATTED. Phase 1 of four; phases 2, 3 and 4
+are not built yet and the gap is named at the bottom of this section.
+
+WHAT CHANGED ON THE SERVER. text.txt used to hold the CLEANED text, because
+api_prepare cleaned the paste before saving it. That threw the Markdown away
+at the door and left nothing to format later. It now holds what was PASTED,
+markers and all, and everything derived from it - title, char count, unit
+count, sentences - is still taken from the cleaned form, so nothing
+downstream ever sees a hash or an asterisk. text_payload carries the raw
+`source` alongside the cleaned `sentences`.
+
+Texts saved by v3.10 and earlier hold already-cleaned text. Their source is
+therefore plain, the detector says so, and they open exactly as before.
+
+MARKED IS VENDORED WHOLE, at static/marked.umd.js, 43,897 bytes, sha256
+eaccee2f…3982a, version 18.0.10. Note the NAME: upstream no longer ships a
+marked.min.js. Modern marked ships lib/marked.umd.js and that is the same
+self-contained no-build-step file under a different name. Not markdown-it,
+which is three times the size, and not snarkdown, which was abandoned in 2022.
+Served from disk, never from a CDN, because the phone is often offline.
+
+WHEN IS IT MARKDOWN. Plain text must come through completely untouched, so
+one weak hint is never enough: a hyphen list and an emphatic *word* both
+appear in ordinary pasted articles.
+
+    STRONG, decides on its own      # heading, ``` fence, [text](url), an
+                                    image, a table delimiter row
+    WEAK, needs two DIFFERENT ones  bullets, > quotes, **bold**, *italic*,
+                                    `code`, --- rules, setext underlines
+
+The weak ones are grouped into FAMILIES and each family counts at most once.
+That is not tidiness, it is a bug that was caught: "The end.\n---\nAnother
+thought" matched the thematic-break rule AND the setext-underline rule, which
+are the same single dash line read two ways, and two hints drawn from one
+construct carried a plain paragraph over the line on its own.
+
+PARSED ONCE. marked.parse runs exactly once per text, in renderDoc, and the
+result is never re-parsed while reading. Rewriting the source with markers and
+re-parsing per word would lose the scroll position and move every offset
+underneath the highlight.
+
+NO DOMPURIFY. A fixed tag allowlist over one known producer, run inside a
+DOMParser document, which has no browsing context, so nothing in it can
+execute or fetch while it is being cleaned. Unknown tags are UNWRAPPED so
+their words survive; script, style, iframe, svg, form and their kin are
+dropped whole. Every attribute goes except a short per-tag list, which kills
+every on* handler by one rule rather than by name. href and src must be
+relative, http, https or mailto, and control characters are stripped before
+the scheme is read, because "java\tscript:" is a real evasion.
+
+IF THE PARSER IS MISSING, mdRender returns null and every text falls back to
+the plain path. That is exactly the behaviour of every version before this
+one, so a failed asset is a lost feature and never a blank page.
+
+STYLING is all in em, so the reader's own font-size setting still governs and
+a heading stays a RATIO of the body text. Colour is deliberately restrained:
+body text and headings both stay var(--page-text), told apart by size and
+weight rather than ink, because the sentence highlight is a solid yellow block
+and coloured text underneath it would have to fight it. Links are blue, the
+one colour the highlight never uses.
+
+### What phase 1 does NOT do
+
+A Markdown text renders formatted and READS ALOUD CORRECTLY, but nothing
+lights up while it reads. The highlight lives on .sent spans, and rendered
+Markdown has none. highlight() and ensureWordSpans() find no element and
+return quietly, so nothing crashes and the audio is untouched.
+
+Plain text is completely unaffected: same .sent spans, same highlight, same
+sentences, byte for byte.
+
+Also still owed, and belonging to the later phases:
+
+    EDIT mode on a Markdown text edits the RENDERED TEXT, not the Markdown
+      source, so committing an edit flattens the formatting. Phase 3.
+    tap a sentence to read from there does nothing in a Markdown text,
+      because there are no sentence spans to tap. Phase 3.
+    code blocks, tables and link URLs are cleaned by the OLD server-side
+      cleaner, unchanged from v3.10, so a table still reads as its cells run
+      together and a fenced block is still spoken. Phase 4.
 
 The visible version is v3.N and N goes up on every push, however small, so a
 change can be pointed at and named. Run bump.py before pushing; it changes all
