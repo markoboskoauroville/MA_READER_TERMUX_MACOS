@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.3
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.4
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.3%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.4%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2534,7 +2534,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "tapPaste": True, "floatPaste": True, "voiceBar": True,
-                  "spPicked": [], "fullOnPaste": True,
+                  "spPicked": [], "fullOnPaste": True, "hideTabs": False,
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
@@ -4454,13 +4454,17 @@ body.wordhl .sent.paused .w.now{
 .syncends{display:flex; justify-content:space-between; font-size:11px;
   color:var(--faint); margin-top:2px}
 .sheet-head{position:sticky; top:0; z-index:6; background:var(--bg2);
-  display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
   margin:0 -16px 14px; padding:2px 16px 12px; border-bottom:1px solid var(--line)}
-.sheet-head-text{display:flex; flex-direction:column; gap:2px}
+.sheet-head-text{display:flex; flex-direction:column; gap:2px; text-align:center}
 .sheet-title{margin:0}
-.sheet .done{margin:0; flex:0 0 auto; align-self:center; border:1px solid var(--line);
-  background:var(--panel); color:var(--text); border-radius:11px; padding:9px 18px;
-  font-size:14px; font-weight:700}
+/* One X, in the middle, pinned to the top of the sheet. It does not scroll
+   away and it says nothing, because there is nothing to say. */
+.sheet-x{flex:0 0 auto; width:46px; height:46px; margin:0 0 6px; padding:0;
+  border:1px solid var(--line); background:var(--panel); color:var(--dim);
+  border-radius:50%; font-size:19px; line-height:1;
+  display:flex; align-items:center; justify-content:center}
+.sheet-x:active{color:var(--text); border-color:var(--tune)}
 
 .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom));
   transform:translateX(-50%); background:var(--panel); color:var(--text);
@@ -4581,6 +4585,13 @@ body:not(.inreader):not(.onhome) .voices{display:none}
 /* with zero languages the voice strip is gone, so the gear drops onto the tab
    row line; reserve room on the right so tabs never slide under it */
 body.novoice nav.tabs{padding-right:40px}
+/* The tab row can go, leaving only the gear. Nothing else is lost: the reader
+   is where the app already is, and the gear brings the row back. */
+body.notabs .topbar{display:none !important}
+/* The floating P has no business sitting on top of Settings. It would cover
+   the panel and, now that a tap outside closes the sheet, a stray press of it
+   would both close Settings and paste. */
+body.sheetopen .floatp{display:none !important}
 /* The strip switched off by hand. Same result as having no voices at all,
    so it borrows the same rule and gives the reader back that whole band. */
 body.nobar .voices{display:none !important}
@@ -4919,7 +4930,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.3 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.4 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5032,25 +5043,30 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 <!-- reading settings sheet -->
 <div class="backdrop" id="backdrop"></div>
 <div class="sheet" id="sheet">
-  <div class="grab"></div>
   <div class="sheet-head">
+    <button class="sheet-x" id="sheetX" title="Close">&#10005;</button>
     <div class="sheet-head-text">
       <h2 class="sheet-title">Settings</h2>
       <small class="sheet-note">MA Reader <b id="appVerTop"></b> &middot;
         everything here is remembered for next time.</small>
     </div>
-    <button class="done" id="sheetDone">Done</button>
   </div>
 
   <!-- Two engines, two buttons, and the cards below follow whichever is
        chosen. Everything to do with voices is engine-shaped, so it hides;
        speed, the pauses, the text and the colours belong to both and stay. -->
   <div class="wsub" style="margin-top:0">After pasting</div>
-  <div class="chips" id="bothWrap" style="margin:0 0 6px">
+  <div class="chips" style="margin:0 0 6px">
     <button class="chip" id="fullPasteTog">Go full screen</button>
   </div>
   <div class="langhint" style="margin-bottom:12px">The app always opens normal.
     This decides where a paste takes you.</div>
+
+  <div class="wsub">The tab row</div>
+  <div class="chips" id="bothWrap" style="margin:0 0 6px">
+    <button class="chip" id="hideTabsTog">Hide the tabs</button>
+  </div>
+  <div class="langhint" style="margin-bottom:12px">Leaves only the gear.</div>
   <div class="engtabs" id="engTabs">
     <button class="engtab" data-engine="edge">
       <b>Edge</b><small>free &middot; 13 languages</small></button>
@@ -5393,7 +5409,7 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
-  voiceBar: true, spPicked: [], fullOnPaste: true,
+  voiceBar: true, spPicked: [], fullOnPaste: true, hideTabs: false,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -6627,6 +6643,8 @@ function step(kind, d){
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
   { const b=$("#fullPasteTog"); if(b) b.classList.toggle("on", !!ST.fullOnPaste); }
+  { const b=$("#hideTabsTog"); if(b) b.classList.toggle("on", !!ST.hideTabs); }
+  document.body.classList.toggle("notabs", !!ST.hideTabs);
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
@@ -6642,8 +6660,20 @@ function refreshToggles(){
   $("#loopBtn").classList.toggle("on", ST.loop);
   { const sw=$("#swipeTog"); if(sw) sw.classList.toggle("on", ST.swipeRev); }
 }
-function openSheet(){ $("#backdrop").classList.add("show"); $("#sheet").classList.add("show"); }
-function closeSheet(){ $("#backdrop").classList.remove("show"); $("#sheet").classList.remove("show"); }
+function openSheet(){
+  $("#backdrop").classList.add("show"); $("#sheet").classList.add("show");
+  document.body.classList.add("sheetopen");
+}
+/* Closing a sheet SAVES. There is no Done button any more, so every way out,
+   the X, a tap outside, the back gesture, has to be a commit. Waiting for the
+   250 ms timer would be a quarter second in which the phone can be put away
+   and the change lost, which has happened before. */
+function closeSheet(){
+  $("#backdrop").classList.remove("show"); $("#sheet").classList.remove("show");
+  document.body.classList.remove("sheetopen");
+  try{ stopPreview(); }catch(e){}
+  try{ persistNow(); }catch(e){}
+}
 
 function setStatus(s){ $("#status").textContent = s || ""; }
 
@@ -6896,6 +6926,7 @@ function stateBody(){
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
         spPicked:(ST.spPicked||[]), fullOnPaste:!!ST.fullOnPaste,
+        hideTabs:!!ST.hideTabs,
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs});
@@ -7124,6 +7155,13 @@ function bind(){
                         : "Tap a sentence to read from it");
     };
   }
+  { const b=$("#hideTabsTog");
+    if(b) b.onclick = ()=>{
+      ST.hideTabs = !ST.hideTabs;
+      refreshToggles(); persist();
+      toast(ST.hideTabs ? "Tabs hidden, the gear stays" : "Tabs back");
+    };
+  }
   { const b=$("#fullPasteTog");
     if(b) b.onclick = ()=>{
       ST.fullOnPaste = !ST.fullOnPaste;
@@ -7157,7 +7195,7 @@ function bind(){
   $("#focusTog").onclick = ()=>{ ST.focus=!ST.focus; refreshToggles(); persist(); };
 
   $("#backdrop").onclick = closeSheet;
-  $("#sheetDone").onclick = ()=>{ stopPreview(); closeSheet(); persistNow(); };
+  { const x=$("#sheetX"); if(x) x.onclick = closeSheet; }
   document.querySelectorAll("#themeChips .chip").forEach(c=>
     c.onclick = ()=>{ ST.theme=c.dataset.theme; applyTheme(); persist(); });
   document.querySelectorAll("#fontChips .chip").forEach(c=>
@@ -8123,6 +8161,7 @@ function boot(){
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : [];
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
+    ST.hideTabs = !!st.hideTabs;
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;

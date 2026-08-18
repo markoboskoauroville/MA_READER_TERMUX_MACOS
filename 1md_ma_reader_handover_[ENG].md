@@ -207,6 +207,28 @@ The FILENAME never changes. It names the line, 3, and maread-update fetches it
 by that name; renaming the file on every build would break the one command
 Baba actually types.
 
+## The Settings sheet
+
+No Done button. One X, centred, pinned to the top of the sheet, no text on it.
+A tap anywhere outside the sheet closes it too.
+
+Every way out SAVES, at once, not on the 250 ms timer. Without a Done button
+every exit is a commit, and waiting for a timer would leave a quarter second
+in which the phone can be put away and the change lost, which has happened
+before.
+
+The floating P is hidden while the sheet is open. It would cover the panel,
+and now that a tap outside closes the sheet, a stray press of it would both
+close Settings and paste.
+
+## The header can be emptied
+
+"Hide the tabs" removes the Read / Paste / Player / Offline / Help row and
+leaves only the gear. The gear lives in the header but OUTSIDE .topbar, which
+is what body.notabs hides, so the way back is structurally guaranteed rather
+than merely remembered: gear, Settings, toggle. With the voice row also off,
+the whole header is one gear.
+
 ## Where the settings live
 
 One file, ~/.maread-web/web_state.json, in Termux private storage. Nothing
@@ -238,6 +260,7 @@ Generated from the shipped page, so it cannot drift. All live in the
 Settings sheet and all are remembered.
 
     Go full screen           fullPasteTog
+    Hide the tabs            hideTabsTog
     Voice buttons on top     voiceBarTog
     Auto-play on open        autoplayTog
     Remember position        resumeTog
