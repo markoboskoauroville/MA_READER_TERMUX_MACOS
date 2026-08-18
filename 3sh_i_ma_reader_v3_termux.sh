@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.13
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.14
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.13%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.14%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1016,30 +1016,48 @@ def voice_label(langkey, sex):
 # ---------- text -> sentences -> units ----------
 _SENT_RE = re.compile(r"(?<=[.!?\u2026])\s+")
 
-def split_sentences(text):
-    spans, start = [], 0
-    for m in _SENT_RE.finditer(text):
+def split_sentences(text, lo=0, hi=None):
+    if hi is None:
+        hi = len(text)
+    spans, start = [], lo
+    for m in _SENT_RE.finditer(text, lo, hi):
         spans.append((start, m.start())); start = m.end()
-    if start < len(text):
-        spans.append((start, len(text)))
+    if start < hi:
+        spans.append((start, hi))
     return [(a, b) for a, b in spans if text[a:b].strip()]
 
-def split_units(text, cap=UNIT_CAP):
+# A blank line in the RENDERED text is a real boundary: a heading, a list item,
+# a table row, a paragraph. The sentence splitter only breaks on . ! and ?, so
+# without this a heading is glued to the paragraph under it and every list item
+# runs into the next one. Only ever applied to Markdown, never to plain text,
+# where a blank line means only that someone pressed return twice.
+_BLOCK_RE = re.compile(r"\n{2,}")
+
+def split_units(text, cap=UNIT_CAP, blocks=False):
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if blocks:
+        ranges, start = [], 0
+        for m in _BLOCK_RE.finditer(text):
+            ranges.append((start, m.start())); start = m.end()
+        ranges.append((start, len(text)))
+        ranges = [(a, b) for a, b in ranges if text[a:b].strip()]
+    else:
+        ranges = [(0, len(text))]
     units = []
-    for a, b in split_sentences(text):
-        s = a
-        while b - s > cap:
-            cut = text.rfind(" ", s, s + cap)
-            if cut <= s:
-                cut = s + cap
-            if text[s:cut].strip():
-                units.append((s, cut))
-            s = cut
-            while s < b and text[s] in " \n\t":
-                s += 1
-        if b > s and text[s:b].strip():
-            units.append((s, b))
+    for ra, rb in ranges:
+        for a, b in split_sentences(text, ra, rb):
+            s = a
+            while b - s > cap:
+                cut = text.rfind(" ", s, s + cap)
+                if cut <= s:
+                    cut = s + cap
+                if text[s:cut].strip():
+                    units.append((s, cut))
+                s = cut
+                while s < b and text[s] in " \n\t":
+                    s += 1
+            if b > s and text[s:b].strip():
+                units.append((s, b))
     return units
 
 # ---------- clean: strip links + Markdown so only plain words are read ----------
@@ -1136,7 +1154,8 @@ def lib_save(raw, spoken=""):
     if spoken.strip():
         open(os.path.join(d, "spoken.txt"), "w", encoding="utf-8").write(spoken)
     meta = {"title": title, "created": int(time.time()),
-            "chars": len(text), "units": len(split_units(text))}
+            "chars": len(text),
+            "units": len(split_units(text, blocks=bool(spoken.strip())))}
     json.dump(meta, open(os.path.join(d, "meta.json"), "w", encoding="utf-8"),
               ensure_ascii=False)
     return tid
@@ -1187,8 +1206,9 @@ def text_payload(tid):
     so nothing already on the phone changes meaning."""
     src = lib_text(tid)
     sp = lib_spoken(tid)
-    text = sp if sp.strip() else clean_text(src)
-    units = split_units(text)
+    rendered = bool(sp.strip())
+    text = sp if rendered else clean_text(src)
+    units = split_units(text, blocks=rendered)
     title = ""
     try:
         title = json.load(open(os.path.join(LIB_DIR, tid, "meta.json"),
@@ -5101,7 +5121,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.13 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.14 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6286,8 +6306,16 @@ function mdRender(src){
    collapses runs to a single space. That is not a mismatch, because nothing
    maps by comparing text - every word span carries its own [s,e) offsets into
    the spoken string, recorded as the string is built. */
+/* A block ends a line in the spoken string, and the server turns that into a
+   sentence break. TD and TH are NOT here: a table reads far better as one row
+   per sentence with the cells separated inside it than as one sentence per
+   cell, which would make "Stage" and "Cost" two things to listen to. */
 const MD_BLOCKS = new Set(["P","DIV","H1","H2","H3","H4","H5","H6","UL","OL",
-  "LI","BLOCKQUOTE","PRE","HR","TABLE","THEAD","TBODY","TFOOT","TR","TD","TH"]);
+  "LI","BLOCKQUOTE","PRE","HR","TABLE","THEAD","TBODY","TFOOT","TR"]);
+/* Tags that hold other blocks and never hold prose of their own. Whitespace
+   sitting directly inside one of these is the parser's own line breaks. */
+const MD_CONTAINERS = new Set(["TABLE","THEAD","TBODY","TFOOT","TR","UL","OL",
+  "DIV","BLOCKQUOTE"]);
 
 function mdBuild(root){
   const spans = [], gaps = [];
@@ -6323,6 +6351,13 @@ function mdBuild(root){
     if(!text) return;
     const doc = tn.ownerDocument;
     if(!/\S/.test(text)){
+      /* Whitespace between two BLOCK-level siblings is structural, not a word
+         gap: the newlines a parser leaves between <th> cells or between <li>
+         items are formatting of the HTML, not spacing of the prose. Spoken as
+         a space they produce "Stage , Cost " with a gap before the comma.
+         The block boundary has already done the separating. */
+      const par = (tn.parentNode && tn.parentNode.tagName || "").toUpperCase();
+      if(MD_CONTAINERS.has(par)) return;
       const s = out.length;
       if(space()){
         const g = gapSpan(tn, s);
@@ -6369,7 +6404,27 @@ function mdBuild(root){
       if(c.nodeType !== 1) continue;
       const tag = c.tagName.toUpperCase();
       if(tag === "BR"){ if(out && !/\n$/.test(out)) out += "\n"; continue; }
-      if(tag === "IMG"){ continue; }        /* an image speaks nothing */
+      /* AN IMAGE SPEAKS NOTHING, not even its alt text. Alt text has no text
+         node and therefore no span, and a word with no span is a word the
+         highlight cannot follow and the reader cannot see coming. Speaking it
+         would break the one rule phase 2 exists to keep. The picture is on
+         the screen; it does not need narrating. */
+      if(tag === "IMG"){ continue; }
+      /* A FENCED CODE BLOCK IS NOT READ ALOUD. Thirty lines of Python spoken
+         by a voice is not reading, it is noise, and it is the single fastest
+         way to make a long article unlistenable. It stays fully VISIBLE and
+         is simply stepped over. Inline `code` is different and is still
+         spoken, because it is usually one word inside a sentence. */
+      if(tag === "PRE"){ gap(); continue; }
+      /* Cells inside a row are separated rather than broken apart, so a row
+         reads as one thing: "Stage, Cost". The separator is two characters
+         nobody typed, so it owns no span and lights nothing, which is the
+         same treatment whitespace already gets. */
+      if(tag === "TD" || tag === "TH"){
+        if(out && !/\n$/.test(out) && !/,\s$/.test(out)) out += ", ";
+        walk(c);
+        continue;
+      }
       const block = MD_BLOCKS.has(tag);
       if(block) gap();
       walk(c);

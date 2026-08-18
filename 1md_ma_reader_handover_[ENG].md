@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 18.8.2026, v3.13, everything in it verified. This file is rewritten on
+State of the app as of 18.8.2026, v3.14, everything in it verified. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -203,12 +203,13 @@ TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
 
-## Markdown, phases 1 to 3 of 4: it renders, it is one text, and it lights up
+## Markdown, all four phases: it renders, it is one text, it lights up,
+## and it knows what not to read
 
 The reader shows pasted Markdown FORMATTED, the words spoken are the same
 words that are wrapped in spans, and the sentence and the word light up as it
-reads. Phases 1 to 3 of four; phase 4, the ugly cases, is not built yet and
-the gap is named at the bottom of this section.
+reads. All four phases are in. What is still open is named at the bottom of
+this section.
 
 WHAT CHANGED ON THE SERVER. text.txt used to hold the CLEANED text, because
 api_prepare cleaned the paste before saving it. That threw the Markdown away
@@ -399,11 +400,12 @@ sentences, byte for byte.
 
 Also still owed, and belonging to the later phases:
 
-    a heading glues to the paragraph after it, because the sentence splitter
-      only breaks on . ! ? and a heading has none. Phase 4.
-    a table reads as its cells run together, and a fenced code block is read
-      aloud in full. Phase 4.
-    an image speaks nothing at all, not even its alt text. Phase 4.
+    the browser side has never been seen in a browser. Every visual claim in
+      this section is code inspection and a headless DOM only
+    Edge is untested for Markdown; every timing proof used Speechify, because
+      edge-tts was not installed where the tests ran
+    maread-update replacing ITSELF while running is still not covered by the
+      upgrade test
 
 The visible version is v3.N and N goes up on every push, however small, so a
 change can be pointed at and named. Run bump.py before pushing; it changes all
