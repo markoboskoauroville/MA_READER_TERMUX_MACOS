@@ -237,8 +237,7 @@ being lost.
 Generated from the shipped page, so it cannot drift. All live in the
 Settings sheet and all are remembered.
 
-    Hide Edge                hideEdgeTog
-    Hide Speechify           hideSpTog
+    Start in full screen     startFullTog
     Voice buttons on top     voiceBarTog
     Auto-play on open        autoplayTog
     Remember position        resumeTog
@@ -281,12 +280,7 @@ previews and kept the Edge ones. The usage counter recorded 27 characters for
 
 ### What appears on the top row
 
-Two switches at the very top of Settings, one per engine: Hide Edge, Hide
-Speechify. A row that is not there cannot be pressed by a pocket, which is the
-whole reason for them; a phone in a pocket had been changing the voice by
-itself.
-
-Below that, every Speechify voice in the paged grid carries a tick box. Ticked
+Every Speechify voice in the paged grid carries a tick box. Ticked
 voices go on the top row, ANY NUMBER of them, because the row scrolls. Four
 was only ever the size of the window in Settings, never a limit on the row.
 Untick everything and nothing shows.
@@ -299,8 +293,22 @@ devices can repeat an entry.
 Unticking the voice that is currently speaking does not stop it. It keeps
 reading and simply stops being shown, which is the least surprising thing.
 
-The old "Show both engines" switch is retired: two rows now appear whenever
-both engines have something to show, which the two hide switches say better.
+The old "Show both engines" switch is retired: two rows appear whenever both
+engines have something to show. The per-engine Hide switches are retired too,
+as redundant: an engine with nothing ticked, or no language ticked, already
+contributes nothing, and the ticks are the honest control because they say
+WHICH voices as well as whether.
+
+That row now carries "Start in full screen" instead. It opens straight into
+the reading view. Only OUR furniture can be hidden at load: a page cannot
+demand the browser's own full screen without a gesture to hang it on, and a
+page that just loaded has none. So in a tab the address bar stays until the
+first press of the P; installed to the home screen there is nothing to hide
+and this is genuinely full screen.
+
+If the floating P is switched off, the corner exit button comes back in full
+screen. Full screen with no way out is a trap, and the app promises he is
+never stuck in that view.
 
 ### The voice strip can be switched off
 

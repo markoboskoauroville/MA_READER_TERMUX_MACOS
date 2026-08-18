@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.1
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.2
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.1%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.2%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2534,7 +2534,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "tapPaste": True, "floatPaste": True, "voiceBar": True,
-                  "hideEdge": False, "hideSp": False, "spPicked": [],
+                  "spPicked": [], "startFull": False,
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
@@ -4745,6 +4745,10 @@ body.hasfloat .floatp{display:flex}
 .fsout svg{width:20px; height:20px; display:block}
 .fsout:active{background:rgba(127,127,127,.26); color:var(--text)}
 body.fullread .fsout{display:none !important}
+/* ...unless the floating P has been switched off, in which case the corner
+   button is the ONLY way out and must come back. Full screen with no exit is
+   a trap, and this app promises he is never stuck in that view. */
+body.fullread:not(.hasfloat) > .fsout{display:flex !important}
 /* while the text is a paste target, say so with the cursor and kill the
    text selection that a tap would otherwise start */
 body.tappaste .doc, body.tappaste #offDoc{cursor:copy;
@@ -4915,7 +4919,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.1 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.2 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5041,13 +5045,12 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <!-- Two engines, two buttons, and the cards below follow whichever is
        chosen. Everything to do with voices is engine-shaped, so it hides;
        speed, the pauses, the text and the colours belong to both and stay. -->
-  <div class="wsub" style="margin-top:0">Hide from the top row</div>
+  <div class="wsub" style="margin-top:0">How it starts</div>
   <div class="chips" id="bothWrap" style="margin:0 0 6px">
-    <button class="chip" id="hideEdgeTog">Hide Edge</button>
-    <button class="chip" id="hideSpTog">Hide Speechify</button>
+    <button class="chip" id="startFullTog">Start in full screen</button>
   </div>
-  <div class="langhint" style="margin-bottom:12px">Hidden engines cannot be
-    tapped by a pocket.</div>
+  <div class="langhint" style="margin-bottom:12px">Opens straight into the
+    reading view, nothing but the text and the P.</div>
   <div class="engtabs" id="engTabs">
     <button class="engtab" data-engine="edge">
       <b>Edge</b><small>free &middot; 13 languages</small></button>
@@ -5390,7 +5393,7 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
-  voiceBar: true, hideEdge: false, hideSp: false, spPicked: [],
+  voiceBar: true, spPicked: [], startFull: false,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -5476,10 +5479,13 @@ function togglePick(vkey){
   if(i >= 0) a.splice(i, 1); else a.push(vkey);
   ST.spPicked = a;
 }
-/* Each engine can be kept off the top row entirely. A row that is not there
-   cannot be pressed by a pocket, which is the whole reason for it. */
-function topEdge(){ return ST.hideEdge ? [] : edgeVoices(); }
-function topSp(){ return ST.hideSp ? [] : spPickedVoices(); }
+/* What each engine contributes to the top row. There used to be a switch per
+   engine to hide it, which was redundant: an engine with nothing ticked, or
+   no language ticked, already contributes nothing. Two ways to say the same
+   thing is one way too many, and the ticks are the honest one because they
+   say WHICH voices as well as whether. */
+function topEdge(){ return edgeVoices(); }
+function topSp(){ return spPickedVoices(); }
 function shownVoices(){
   return ST.engine === "speechify" ? topSp() : topEdge();
 }
@@ -6620,8 +6626,7 @@ function step(kind, d){
 
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
-  { const b=$("#hideEdgeTog"); if(b) b.classList.toggle("on", !!ST.hideEdge); }
-  { const b=$("#hideSpTog"); if(b) b.classList.toggle("on", !!ST.hideSp); }
+  { const b=$("#startFullTog"); if(b) b.classList.toggle("on", !!ST.startFull); }
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
@@ -6890,8 +6895,7 @@ function stateBody(){
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
-        hideEdge:!!ST.hideEdge, hideSp:!!ST.hideSp,
-        spPicked:(ST.spPicked||[]),
+        spPicked:(ST.spPicked||[]), startFull:!!ST.startFull,
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs});
@@ -7120,18 +7124,11 @@ function bind(){
                         : "Tap a sentence to read from it");
     };
   }
-  { const b=$("#hideEdgeTog");
+  { const b=$("#startFullTog");
     if(b) b.onclick = ()=>{
-      ST.hideEdge = !ST.hideEdge;
-      refreshToggles(); renderVoices(); persist();
-      toast(ST.hideEdge ? "Edge hidden from the top" : "Edge back on top");
-    };
-  }
-  { const b=$("#hideSpTog");
-    if(b) b.onclick = ()=>{
-      ST.hideSp = !ST.hideSp;
-      refreshToggles(); renderVoices(); persist();
-      toast(ST.hideSp ? "Speechify hidden from the top" : "Speechify back on top");
+      ST.startFull = !ST.startFull;
+      refreshToggles(); persist();
+      toast(ST.startFull ? "Opens in full screen" : "Opens normally");
     };
   }
   { const b=$("#bgResumeTog");
@@ -8113,9 +8110,8 @@ function boot(){
     ST.spSet   = Math.max(0, st.spSet | 0);
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
-    ST.hideEdge = !!st.hideEdge;
-    ST.hideSp = !!st.hideSp;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : [];
+    ST.startFull = !!st.startFull;
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
@@ -8184,6 +8180,13 @@ function boot(){
     /* Everything is restored. From here it is safe to write. */
     booted = true;
     bindV2(); refreshToggles(); showHome();
+    /* Start in full screen, if asked. Only OUR furniture can be hidden here:
+       a page cannot demand the browser's own full screen without a gesture to
+       hang it on, and a page that just loaded has none. So in a tab the
+       address bar stays until the first press of the P; installed to the home
+       screen there is no address bar to begin with and this IS full screen.
+       Said plainly in Settings rather than pretended. */
+    if(ST.startFull){ setFullread(true); }
     refreshGemini();
   }).catch(()=>{ setStatus("Could not reach the server."); });
 }
