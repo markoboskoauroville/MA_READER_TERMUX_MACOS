@@ -240,6 +240,20 @@ rather than hidden. An old settings file listing them simply loses them on
 load, and a text cached under a removed voice answers a clean error rather
 than half-playing.
 
+## One app, one look
+
+The terminal wears the same three colours everywhere: gold for a key, dim for
+a label, white for a value. Same rule line, same aligned rows, same shape of
+menu in the server screen, the updater and the installer.
+
+NO RED. Red says something is wrong, and a server that started is not wrong.
+The only red left is on an actual failure.
+
+The launcher no longer calls the shared ma_banner from ~/.ma/banner.sh, which
+drew the name in red and wrapped its key line across two rows. It draws its
+own header instead, after the real port is known, so the address shown is the
+one being served.
+
 ## The Settings sheet
 
 No Done button. One X, centred, pinned to the top of the sheet, no text on it.
@@ -335,6 +349,12 @@ previews and kept the Edge ones. The usage counter recorded 27 characters for
 "This is Beatrice. Hi there.", which is exactly its length.
 
 ### What appears on the top row
+
+spPicked is NULL when the voices have never been chosen and an ARRAY once
+they have, and the two mean different things. Null lets the app offer the
+first four; an empty array is a decision and is honoured. Treating them as the
+same value is what made unticked voices reappear on every restart: the seed
+could not tell a decision from a blank.
 
 Every Speechify voice in the paged grid carries a tick box. Ticked
 voices go on the top row, ANY NUMBER of them, because the row scrolls. Four

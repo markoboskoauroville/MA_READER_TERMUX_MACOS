@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.7
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.8
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.7%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.8%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2517,7 +2517,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "tapPaste": True, "floatPaste": True, "voiceBar": True,
-                  "spPicked": [], "fullOnPaste": True, "hideTabs": False,
+                  "spPicked": None, "fullOnPaste": True, "hideTabs": False,
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
@@ -2570,6 +2570,13 @@ def load_state():
         st["wgap"] = max(0.0, min(2.0, round(float(st.get("wgap", 0.0)), 2)))
     except (TypeError, ValueError):
         st["wgap"] = 0.0
+    # None = never chosen, [] = chosen to be none. Anything else is nonsense
+    # and becomes None so the app can offer a starting set again.
+    sp = st.get("spPicked")
+    if sp is not None and not isinstance(sp, list):
+        st["spPicked"] = None
+    elif isinstance(sp, list):
+        st["spPicked"] = [str(x) for x in sp if isinstance(x, str)]
     if st.get("mode") not in ("read", "text"):
         st["mode"] = "read"          # edit is never restored
     if st.get("engine") not in ("edge", "speechify"):
@@ -3919,10 +3926,13 @@ def _banner():
             ncol = curses.tigetnum("colors") or 0
         except Exception:
             ncol = 8
+    # Gold for the name, dim for labels, white for values. The same three
+    # the launcher and the updater use, because it is one app. No red: red
+    # says something is wrong, and a server that started is not wrong.
     if ncol >= 256:
-        fire, ember, ash, ink = "38;5;208", "38;5;166", "38;5;245", "38;5;252"
+        fire, ember, ash, ink = "1;38;5;222", "38;5;222", "38;5;245", "38;5;252"
     else:
-        fire, ember, ash, ink = "0;33", "0;31", "0;37", "0;37"
+        fire, ember, ash, ink = "1;33", "0;33", "0;37", "0;37"
     art = [
         "   __  __   _     ___ ___   _   ___  ___ ___ ",
         "  |  \\/  | /_\\   | _ \\ __| /_\\ |   \\| __| _ \\",
@@ -3939,12 +3949,15 @@ def _banner():
             ("port", "%d  (base %d)" % (PORT, BASE_PORT)),
             ("library", "~/.maread/library")]
     w = max(len(k) for k, _ in rows)
-    bar = "  " + "\u2500" * 46
+    bar = "   " + "-" * 42
     print(c(ash, bar))
     for k, v in rows:
         print("  " + c(ash, k.ljust(w)) + "  " + c(ink, v))
     print(c(ash, bar))
-    print(c(ash, "  q quit    o open the page    b background"))
+    print("   " + c(fire, "[Q]") + " " + c(ash, "stop"))
+    print("   " + c(fire, "[O]") + " " + c(ash, "open the page"))
+    print("   " + c(fire, "[B]") + " " + c(ash, "keep serving in the background"))
+    print(c(ash, bar))
     print("")
 
 
@@ -4931,7 +4944,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.7 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.8 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5401,7 +5414,11 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
-  voiceBar: true, spPicked: [], fullOnPaste: true, hideTabs: false,
+  /* null means never chosen, so the first four can be offered. An empty
+     ARRAY means chosen to be none, and must be left alone. Treating those
+     two as the same value is what made unticked voices come back on every
+     restart: the seed could not tell a decision from a blank. */
+  voiceBar: true, spPicked: null, fullOnPaste: true, hideTabs: false,
   mode: "read",
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
@@ -5469,7 +5486,7 @@ function spWindow(){
 /* The Speechify voices ticked for the top row. Any number of them, because
    the row scrolls; four was only ever the size of the window in Settings. */
 function spPickedVoices(){
-  const want = ST.spPicked || [];
+  const want = ST.spPicked || [];   /* null behaves as empty until seeded */
   if(!want.length) return [];
   const by = {}, seen = {};
   (ST.spVoices || []).forEach(v => { by[v.vkey] = v; });
@@ -5483,7 +5500,7 @@ function spPickedVoices(){
 }
 function isPicked(vkey){ return (ST.spPicked || []).indexOf(vkey) >= 0; }
 function togglePick(vkey){
-  const a = (ST.spPicked || []).slice();
+  const a = (ST.spPicked || []).slice();   /* a decision from here on */
   const i = a.indexOf(vkey);
   if(i >= 0) a.splice(i, 1); else a.push(vkey);
   ST.spPicked = a;
@@ -6904,7 +6921,8 @@ function stateBody(){
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
-        spPicked:(ST.spPicked||[]), fullOnPaste:!!ST.fullOnPaste,
+        spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
+        fullOnPaste:!!ST.fullOnPaste,
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read",
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
@@ -8182,7 +8200,7 @@ function boot(){
     ST.spSet   = Math.max(0, st.spSet | 0);
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
-    ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : [];
+    ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : null;
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
     ST.hideTabs = !!st.hideTabs;
     /* EDIT is never restored: coming back into a text editor you did not ask
@@ -8198,7 +8216,9 @@ function boot(){
             if(sp.perSet) ST.spPerSet = sp.perSet;
             if(sp.accent) ST.spAccent = sp.accent; }
     spClampSet();
-    if(!(ST.spPicked||[]).length && (ST.spVoices||[]).length){
+    /* Only when it has NEVER been chosen. An empty array is a choice and is
+       honoured: no Speechify voices on top, and they stay off. */
+    if(ST.spPicked === null && (ST.spVoices||[]).length){
       ST.spPicked = ST.spVoices.slice(0, ST.spPerSet || 4).map(v=>v.vkey);
     }
     /* a saved Speechify engine with no voices behind it (no key yet, or no
@@ -8409,10 +8429,6 @@ APPDIR="$HOME/.maread-web"
 PORT="${MAREAD_WEB_PORT:-8081}"
 HOST="${MAREAD_WEB_HOST:-0.0.0.0}"
 PORTFILE="$APPDIR/port.txt"
-[ -f "$HOME/.ma/banner.sh" ] && . "$HOME/.ma/banner.sh"
-if [ -z "$MA_NESTED" ] && type ma_banner >/dev/null 2>&1; then
-  ma_banner "MA READER" "$PORT" "$MA_FIRE" "Fire | the Word"
-fi
 termux-wake-lock 2>/dev/null || true
 
 # ---------------------------------------------------------- which browser --
@@ -8423,7 +8439,12 @@ termux-wake-lock 2>/dev/null || true
 # be made from inside the app without touching the terminal.
 # $'...' so the escapes become real bytes; a plain single quoted string
 # would print the characters \033[38;5;245m at you instead of colouring.
+# The same palette maread-update wears, because this is one app and it
+# should look like one. Gold for a key, dim for a label, white for a value.
+# No red anywhere: red means something is wrong, and nothing here is wrong.
 DIMC=$'\033[38;5;245m'; KEYC=$'\033[1;38;5;222m'; OFFC=$'\033[0m'
+WHTC=$'\033[38;5;252m'; GRNC=$'\033[38;5;114m'
+ruleC(){ printf '   %s%s%s\n' "$DIMC" "------------------------------------------" "$OFFC"; }
 BROWSERFILE="$APPDIR/browser.txt"
 read_pref(){
   [ -f "$BROWSERFILE" ] || { echo chrome; return; }
@@ -8462,6 +8483,32 @@ open_url(){   # $1 url, $2 chrome|auto
 }
 
 
+lan_ip(){
+  ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}' \
+    || true
+}
+
+show_head(){   # $1 = the port actually in use
+  IP="$(lan_ip)"
+  echo ""
+  printf '   %sMA READER%s  %sserver%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
+  ruleC
+  printf '    %s%-14s%s %s%s%s\n' "$DIMC" "on this phone" "$OFFC" \
+    "$WHTC" "http://127.0.0.1:$1" "$OFFC"
+  if [ -n "$IP" ]; then
+    printf '    %s%-14s%s %s%s%s\n' "$DIMC" "on Wi-Fi" "$OFFC" \
+      "$WHTC" "http://$IP:$1" "$OFFC"
+  fi
+  printf '    %s%-14s%s %s%s%s\n' "$DIMC" "library" "$OFFC" \
+    "$WHTC" "~/.maread" "$OFFC"
+  ruleC
+  printf '    %s[O]%s %sopen in Chrome%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
+  printf '    %s[A]%s %sopen in the default browser%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
+  printf '    %s[Q]%s %sstop%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
+  ruleC
+  echo ""
+}
+
 # The server takes the first free port at or above the base one and writes the
 # winner to a portfile, so wait for that rather than guessing; otherwise a
 # second copy of the app would open the browser on the first copy's page.
@@ -8487,13 +8534,16 @@ trap 'cleanup; exit 0' INT TERM
 # While it runs, one key reopens the page. Useful when the browser was closed,
 # or when a page has gone stale and you want a second opinion from the other
 # browser without stopping the server.
-url_now(){
-  if [ -s "$PORTFILE" ]; then echo "http://localhost:$(cat "$PORTFILE")";
-  else echo "http://localhost:$PORT"; fi
+url_port(){
+  if [ -s "$PORTFILE" ]; then cat "$PORTFILE"; else echo "$PORT"; fi
 }
+url_now(){ echo "http://localhost:$(url_port)"; }
 if [ -t 0 ]; then
-  printf '\n   %s[O]%s open in Chrome    %s[A]%s open in the default browser    %s[Q]%s stop\n\n' \
-    "$KEYC" "$OFFC" "$KEYC" "$OFFC" "$KEYC" "$OFFC"
+  # wait for the real port before drawing, so the address shown is the one
+  # that is actually being served
+  n=0
+  while [ "$n" -lt 40 ] && [ ! -s "$PORTFILE" ]; do sleep 0.1; n=$((n+1)); done
+  show_head "$(url_port)"
   while kill -0 "$SRV" 2>/dev/null; do
     if IFS= read -rsn1 -t 1 K 2>/dev/null; then
       case "$K" in
