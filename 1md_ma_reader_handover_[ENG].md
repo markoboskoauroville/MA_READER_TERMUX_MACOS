@@ -78,13 +78,13 @@ Texts and clips live in ~/.maread, shared with the terminal MA Reader.
 
 Settings opens on two buttons and the cards below follow whichever is chosen.
 
-    Edge        free, keyless, 13 languages, two voices each. Word times
+    Edge        free, keyless, English and Croatian, two voices each. Times
                 re-pinned to the waveform.
     Speechify   keyed, English only, UK and US. Brings its own word times.
 
-"Show both engines" puts them on screen together: Speechify on the first row,
-Edge on the second, each scrolling on its own. Tapping a voice from either row
-moves the engine to match it.
+Both appear on the top row together whenever each has voices to show:
+Speechify first, Edge below, each scrolling on its own. Tapping a voice from
+either row moves the engine to match it.
 
 ### The Speechify key ring
 
