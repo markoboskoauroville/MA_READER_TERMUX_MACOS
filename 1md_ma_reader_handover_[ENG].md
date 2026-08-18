@@ -29,7 +29,7 @@ First time, one paste:
 
 After that, forever:
 
-    maread-update     fetch the newest version and install it
+    maread-update     ask, then install if told to
     mareadweb         run it
     maread-adb        set up a privileged shell for the media keys
 
@@ -517,6 +517,26 @@ line mentions the path, including the installer itself in some invocations,
 which made it refuse to run because it had detected itself. So it requires the
 path in the command line AND the first token to be a python, and never matches
 its own pid or its parent.
+
+## maread-update asks first
+
+It never installs by itself. It downloads to a temporary folder, names the
+version it found against the version installed, and then offers:
+
+    [U]  update, keep my settings
+    [W]  update, wipe my settings   (keys are kept)
+    [D]  update and fetch dependencies too
+    [Q]  quit, change nothing
+
+W passes --wipe to the installer, which is how the installer can wipe without
+asking a second time. With no terminal there is nobody to answer, so it quits
+and changes nothing; an update is never applied to a machine that could not be
+asked.
+
+The download shows a real percentage, taken from Content-Length against the
+bytes on disk, not a decorative animation. The install shows six real steps:
+making room, the server, the page, the fonts, the commands, done. Both go
+silent when output is not a terminal, so a log file does not fill with bars.
 
 ## The menu
 

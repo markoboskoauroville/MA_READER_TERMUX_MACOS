@@ -38,7 +38,9 @@ fi
 
 printf '  got %s bytes, %s\n' "$SIZE" "$(grep -m1 'edition: v' "$TMP/$FILE" | sed 's/.*edition: //')"
 
-# The installer stops any running server, keeps the keys, wipes the old app
-# folder and writes a fresh one. It also leaves the maread-update command
-# behind, so nothing further is needed here.
+# First time only: install without asking, because there is nothing yet to
+# lose and nothing to decline. From here on maread-update does the asking.
 bash "$TMP/$FILE" --offline
+
+printf '\n\033[38;5;114m  from now on just type\033[0m \033[1;38;5;222mmaread-update\033[0m\n'
+printf '  \033[38;5;245mit asks before it changes anything.\033[0m\n\n'

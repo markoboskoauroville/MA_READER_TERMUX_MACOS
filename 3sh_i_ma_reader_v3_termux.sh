@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.5
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.6
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.5%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.6%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -398,10 +398,12 @@ rule() { printf '   %s%s%s\n' "$DIM" "$RULE" "$OFF"; }
 row()  { printf '    %s%-10s%s %s%s%s\n' "$DIM" "$1" "$OFF" "$3" "$2" "$OFF"; }
 
 MODE=""
+WIPEFLAG=0
 for a in "$@"; do
   case "$a" in
     --online|--full|--deps) MODE="online" ;;
     --offline)              MODE="offline" ;;
+    --wipe)                 WIPEFLAG=1 ;;
     --uninstall|--remove)   MODE="remove" ;;
     --purge)                MODE="purge" ;;
   esac
@@ -566,6 +568,21 @@ print(getattr($m,'__version__','') or md.version(n))" 2>/dev/null)"
 # table below says the same thing in the agreed shape. Two tables is one too
 # many, so this one only runs when a flag skipped the menu entirely.
 if [ -n "$MODE" ]; then check_deps; fi
+# ------------------------------------------------------------- progress -----
+# One line, redrawn in place, with a real percentage against the real steps.
+# Silent when this is not a terminal, so a log file does not fill with bars.
+prog() {   # $1 percent, $2 what is happening
+  [ -t 1 ] || return 0
+  _w=22; _f=$(( $1 * _w / 100 )); _b=""; _i=0
+  while [ "$_i" -lt "$_w" ]; do
+    if [ "$_i" -lt "$_f" ]; then _b="$_b#"; else _b="$_b."; fi
+    _i=$((_i+1))
+  done
+  printf '\r   %s[%s]%s %3d%%  %s%-26s%s' "$AMBER" "$_b" "$OFF" "$1" "$DIM" "$2" "$OFF"
+  [ "$1" -ge 100 ] && printf '\n'
+  return 0
+}
+
 # ----------------------------------------------------- the dependency table --
 # Before anything is installed, one row per dependency: what it is, what it is
 # needed for, and a green + if it is here or a red - if it is not. Optional
@@ -819,7 +836,12 @@ if [ -d "$APPDIR" ]; then
   # in the same terminal, so the tty test alone would put this question in
   # front of him on every single update, which is friction he did not ask for.
   WIPESET=0
-  if [ -f "$APPDIR/web_state.json" ] && [ -t 0 ] && [ "$FROMMENU" = "1" ]; then
+  # asked for outright by maread-update, which has already put the question
+  if [ "$WIPEFLAG" = "1" ] && [ -f "$APPDIR/web_state.json" ]; then
+    WIPESET=1
+    printf '   %ssettings will be wiped%s\n' "$CYAN" "$OFF"
+  fi
+  if [ "$WIPESET" = "0" ] && [ -f "$APPDIR/web_state.json" ] && [ -t 0 ] && [ "$FROMMENU" = "1" ]; then
     echo ""
     printf '   %syou have saved settings%s\n' "$B$GOLD" "$OFF"
     rule
@@ -856,6 +878,7 @@ if [ -d "$APPDIR" ]; then
 fi
 
 # only now, once installing is certain, does anything appear on disk
+prog 20 "making room"
 mkdir -p "$APPDIR/static"
 SETUP_LOG="$APPDIR/install.log"; : > "$SETUP_LOG"
 
@@ -886,6 +909,7 @@ else
   printf '   %swriting the app%s\n' "$GOLD" "$OFF"
 fi
 
+prog 35 "the server"
 cat > "$APPDIR/server.py" << 'PYEOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -4023,6 +4047,7 @@ if __name__ == "__main__":
         app.run(host=HOST, port=PORT, threaded=True)
 PYEOF
 printf '    %s\xe2\x9c\x93%s %sserver.py%s\n' "$GREEN" "$OFF" "$DIM" "$OFF"
+prog 55 "the page"
 cat > "$APPDIR/static/index.html" << 'HTMLEOF'
 <!DOCTYPE html>
 <html lang="en">
@@ -4902,7 +4927,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.5 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.6 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -8240,6 +8265,7 @@ boot();
 </html>
 HTMLEOF
 printf '    %s\xe2\x9c\x93%s %sindex.html%s\n' "$GREEN" "$OFF" "$DIM" "$OFF"
+prog 78 "the fonts"
 mkdir -p "$APPDIR/static/fonts"
 cat > "$APPDIR/static/fonts/OFL.txt" << 'OFLEOF'
 Copyright (c) 2019-07-29, Abbie Gonzalez (https://abbiecod.es|support@abbiecod.es),
@@ -8350,6 +8376,7 @@ else
     "$RED" "$OFF" "$DIM" "$OFF"
 fi
 
+prog 90 "the commands"
 cat > "$BIN/mareadweb" << 'LAUNCHEOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # MA Reader Web (Fire | the Word). Serves on 0.0.0.0 so any device on your
@@ -8483,26 +8510,105 @@ fi
 # has to remember a URL
 cat > "$BIN/maread-update" << 'UPDEOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# Fetch the current MA Reader from GitHub and install it.
-set -e
+# Update MA Reader. Nothing is installed until it is asked for.
+A=$'\033[38;5;214m'; G=$'\033[38;5;114m'; R=$'\033[38;5;203m'
+D=$'\033[38;5;245m'; K=$'\033[1;38;5;222m'; W=$'\033[38;5;252m'; O=$'\033[0m'
 RAW="https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main"
 FILE="3sh_i_ma_reader_v3_termux.sh"
-MODE="--offline"
-for a in "$@"; do case "$a" in
-  --online) MODE="--online" ;;
-  --remove|-u) MODE="--uninstall" ;;
-esac; done
+APPDIR="$HOME/.maread-web"
+
+rule(){ printf '   %s%s%s\n' "$D" "------------------------------------------" "$O"; }
+
+getkey() {
+  if [ -t 0 ]; then
+    old="$(stty -g 2>/dev/null)"; stty raw -echo 2>/dev/null
+    k="$(dd bs=1 count=1 2>/dev/null)"; stty "$old" 2>/dev/null
+    printf '%s' "$k"
+  else
+    IFS= read -r k || k=""; printf '%s' "$k"
+  fi
+}
+
+bar(){   # $1 percent, $2 label
+  [ -t 1 ] || return 0
+  w=22; f=$(( $1 * w / 100 )); b=""; i=0
+  while [ "$i" -lt "$w" ]; do
+    if [ "$i" -lt "$f" ]; then b="$b#"; else b="$b."; fi; i=$((i+1))
+  done
+  printf '\r   %s[%s]%s %3d%%  %s%-22s%s' "$A" "$b" "$O" "$1" "$D" "$2" "$O"
+  [ "$1" -ge 100 ] && printf '\n'
+  return 0
+}
+
+have_ver(){
+  [ -f "$APPDIR/static/index.html" ] || { echo "none"; return; }
+  v="$(grep -o 'appVer">v[0-9.]*' "$APPDIR/static/index.html" 2>/dev/null | head -1 | sed 's/.*>v//')"
+  [ -n "$v" ] && echo "v$v" || echo "unknown"
+}
+
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-printf '\033[38;5;214m  fetching the newest MA Reader\033[0m\n'
-if ! curl -fsSL --retry 3 --connect-timeout 20 -o "$TMP/$FILE" "$RAW/$FILE"; then
-  printf '\033[38;5;203m  could not reach GitHub. Nothing was changed.\033[0m\n'; exit 1
+
+# ---------------------------------------------------------------- fetch ----
+# Downloaded first so the version can be named before anything is asked. The
+# file lands in a temporary folder and touches nothing until you say so.
+printf '\n   %sMA READER%s  %supdate%s\n' "$K" "$O" "$D" "$O"
+rule
+TOTAL="$(curl -sIL --connect-timeout 20 "$RAW/$FILE" 2>/dev/null \
+         | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n}')"
+case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
+
+curl -fsSL --retry 3 --connect-timeout 20 -o "$TMP/$FILE" "$RAW/$FILE" &
+CURL=$!
+while kill -0 "$CURL" 2>/dev/null; do
+  if [ "$TOTAL" -gt 0 ] && [ -f "$TMP/$FILE" ]; then
+    NOW="$(wc -c < "$TMP/$FILE" 2>/dev/null || echo 0)"
+    P=$(( NOW * 100 / TOTAL )); [ "$P" -gt 99 ] && P=99
+    bar "$P" "downloading"
+  else
+    bar 0 "downloading"
+  fi
+  sleep 0.2
+done
+wait "$CURL"; RC=$?
+if [ "$RC" != "0" ] || [ ! -s "$TMP/$FILE" ]; then
+  printf '\r   %scould not reach GitHub. Nothing was changed.%s\n\n' "$R" "$O"; exit 1
 fi
-SIZE=$(wc -c < "$TMP/$FILE")
-if [ "$SIZE" -lt 100000 ] || ! head -1 "$TMP/$FILE" | grep -q '^#!' || ! bash -n "$TMP/$FILE" 2>/dev/null; then
-  printf '\033[38;5;203m  the download looks wrong (%s bytes). Nothing was changed.\033[0m\n' "$SIZE"; exit 1
+bar 100 "downloaded"
+
+SIZE="$(wc -c < "$TMP/$FILE")"
+if [ "$SIZE" -lt 100000 ] || ! head -1 "$TMP/$FILE" | grep -q '^#!' \
+   || ! bash -n "$TMP/$FILE" 2>/dev/null; then
+  printf '   %sthat download looks wrong (%s bytes). Nothing was changed.%s\n\n' "$R" "$SIZE" "$O"
+  exit 1
 fi
-printf '  got %s bytes, %s\n\n' "$SIZE" "$(grep -m1 'edition: v' "$TMP/$FILE" | sed 's/.*edition: //')"
-bash "$TMP/$FILE" "$MODE"
+
+NEW="v$(grep -m1 'edition: v' "$TMP/$FILE" | sed 's/.*edition: v//')"
+OLD="$(have_ver)"
+
+echo ""
+printf '    %sinstalled%s   %s%s%s\n' "$D" "$O" "$W" "$OLD" "$O"
+printf '    %savailable%s   %s%s%s   %s(%s bytes)%s\n' "$D" "$O" "$K" "$NEW" "$O" "$D" "$SIZE" "$O"
+if [ "$OLD" = "$NEW" ]; then
+  printf '    %syou already have this one%s\n' "$D" "$O"
+fi
+rule
+printf '    %s[U]%s %supdate, keep my settings%s\n' "$K" "$O" "$D" "$O"
+printf '    %s[W]%s %supdate, wipe my settings%s   %s(keys are kept)%s\n' "$K" "$O" "$D" "$O" "$D" "$O"
+printf '    %s[D]%s %supdate and fetch dependencies too%s\n' "$K" "$O" "$D" "$O"
+printf '    %s[Q]%s %squit, change nothing%s\n' "$K" "$O" "$D" "$O"
+rule
+printf '\n   %s>%s ' "$A" "$O"
+KEYP="$(getkey)"; echo ""
+
+case "$KEYP" in
+  u|U) ARGS="--offline" ;;
+  w|W) ARGS="--offline --wipe" ;;
+  d|D) ARGS="--online" ;;
+  *)   printf '\n   %snothing was changed.%s\n\n' "$D" "$O"; exit 0 ;;
+esac
+
+echo ""
+bash "$TMP/$FILE" $ARGS
 UPDEOF
 chmod +x "$BIN/maread-update"
 
@@ -8595,6 +8701,7 @@ done
 ADBEOF
 chmod +x "$BIN/maread-adb"
 
+prog 100 "done"
 echo ""
 printf '\n   %sinstalled%s   type %smareadweb%s to run it\n' "$B$GREEN" "$OFF" "$KEY" "$OFF"
 printf '   %snext time, one word updates everything:%s %smaread-update%s\n' \
