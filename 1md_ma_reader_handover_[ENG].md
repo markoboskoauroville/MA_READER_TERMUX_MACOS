@@ -254,6 +254,40 @@ drew the name in red and wrapped its key line across two rows. It draws its
 own header instead, after the real port is known, so the address shown is the
 one being served.
 
+## Three panes, not two engines
+
+Edge, Speechify, Settings. WHICH PANE is showing is not the same question as
+WHICH ENGINE speaks; they used to be one value, which is why everything that
+was not about a voice had to be crammed into whichever engine happened to be
+selected, and why nobody could say whether the font lived under Edge or under
+Speechify. Picking Edge or Speechify still switches the engine. Picking
+Settings changes nothing about the voice.
+
+Inside Settings the text card comes first, because it is the one reached for.
+The sheet opens on Settings.
+
+## The dyslexia font is gone
+
+Interface, engine, licence file and both embedded base64 payloads. The
+installer lost 320 KB, which is 46 per cent of it. Typefaces are now sans,
+book, serif, mono, in that order, and sans is the default. An old settings
+file naming the removed font is corrected to sans on load rather than left as
+a value nobody recognises.
+
+## Fresh installs start where Baba starts
+
+    font          sans
+    size          13   (39px)
+    line spacing  3
+    theme         night
+    word highlight on
+    tab row       hidden
+    after pasting normal view
+    sheet opens   Settings
+
+These are DEFAULTS, not overrides: an existing settings file keeps every
+choice already made in it.
+
 ## The Settings sheet
 
 No Done button. One X, centred, pinned to the top of the sheet, no text on it.
