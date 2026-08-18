@@ -518,6 +518,25 @@ which made it refuse to run because it had detected itself. So it requires the
 path in the command line AND the first token to be a python, and never matches
 its own pid or its parent.
 
+## Replacing a command that is running
+
+maread-update is a shell script that runs the installer, so while the
+installer writes, the old updater is still alive and bash is still reading it.
+A plain "cat >" truncates the very file the running shell is reading from; it
+then carries on at its old byte offset into whatever is there now. Small files
+survive by luck because bash had already buffered them whole. Luck is not a
+mechanism, and the updater has been growing.
+
+Every command is therefore written to name.new and renamed over the top. A
+rename swaps the directory entry, so the running shell keeps its open file and
+reads it to the end. The real name only ever appears once the file behind it
+is complete, so a half written command is never reachable. Stale .new files
+from a run that died in between are cleared at the start of the next install.
+
+Demonstrated rather than assumed: a 230 KB script overwritten with cat > while
+running stops dead without reaching its last line; the same script replaced by
+rename runs to the end.
+
 ## maread-update asks first
 
 It never installs by itself. It downloads to a temporary folder, names the

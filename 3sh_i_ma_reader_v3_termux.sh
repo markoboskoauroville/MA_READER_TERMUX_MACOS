@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.6
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.7
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.6%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.7%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -878,6 +878,10 @@ if [ -d "$APPDIR" ]; then
 fi
 
 # only now, once installing is certain, does anything appear on disk
+# a previous run that died between writing and renaming would leave these
+for _c in mareadweb maread-update maread-adb; do
+  rm -f "$BIN/$_c.new" 2>/dev/null || true
+done
 prog 20 "making room"
 mkdir -p "$APPDIR/static"
 SETUP_LOG="$APPDIR/install.log"; : > "$SETUP_LOG"
@@ -4927,7 +4931,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.6 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.7 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -8377,7 +8381,27 @@ else
 fi
 
 prog 90 "the commands"
-cat > "$BIN/mareadweb" << 'LAUNCHEOF'
+
+# ------------------------------------------- replacing a running command ----
+# maread-update is a shell script that runs THIS installer, so while this is
+# writing, the old updater is still alive and bash is still reading it. A
+# plain "cat >" truncates the file the running shell is reading from, and it
+# then carries on at the old byte offset into whatever is there now, which is
+# either nothing or the middle of a different line. Small files survive by
+# luck, because bash had already buffered the whole thing. Luck is not a
+# mechanism.
+#
+# So every command is written beside its own name and renamed over the top.
+# A rename swaps the directory entry; the running shell keeps its open file
+# and reads it to the end undisturbed. Nothing half written is ever reachable
+# under the real name either, because the real name only appears when the file
+# behind it is complete.
+put_cmd() {   # $1 = final path
+  chmod +x "$1.new" 2>/dev/null || true
+  mv -f "$1.new" "$1"
+}
+
+cat > "$BIN/mareadweb.new" << 'LAUNCHEOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # MA Reader Web (Fire | the Word). Serves on 0.0.0.0 so any device on your
 # Wi-Fi can open it. Ctrl-C stops it.
@@ -8489,7 +8513,7 @@ else
 fi
 exit $ST
 LAUNCHEOF
-chmod +x "$BIN/mareadweb"
+put_cmd "$BIN/mareadweb"
 
 # ------------------------------------------------------------ put keys back --
 if [ -n "$STASH" ] && [ -d "$STASH" ]; then
@@ -8508,7 +8532,7 @@ fi
 
 # leave behind the one word update command, so this is the last time anyone
 # has to remember a URL
-cat > "$BIN/maread-update" << 'UPDEOF'
+cat > "$BIN/maread-update.new" << 'UPDEOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # Update MA Reader. Nothing is installed until it is asked for.
 A=$'\033[38;5;214m'; G=$'\033[38;5;114m'; R=$'\033[38;5;203m'
@@ -8610,12 +8634,12 @@ esac
 echo ""
 bash "$TMP/$FILE" $ARGS
 UPDEOF
-chmod +x "$BIN/maread-update"
+put_cmd "$BIN/maread-update"
 
 # ---------------------------------------------------------- maread-adb -----
 # Opens a privileged shell for the media commands. Menu driven, one keypress,
 # no switches to remember.
-cat > "$BIN/maread-adb" << 'ADBEOF'
+cat > "$BIN/maread-adb.new" << 'ADBEOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # Give MA Reader a way to press play on your music again.
 A='\033[38;5;214m'; G='\033[38;5;114m'; R='\033[38;5;203m'; D='\033[38;5;245m'; O='\033[0m'
@@ -8699,7 +8723,7 @@ while :; do
   esac
 done
 ADBEOF
-chmod +x "$BIN/maread-adb"
+put_cmd "$BIN/maread-adb"
 
 prog 100 "done"
 echo ""
