@@ -416,6 +416,38 @@ The FILENAME never changes. It names the line, 3, and maread-update fetches it
 by that name; renaming the file on every build would break the one command
 Baba actually types.
 
+## Two gestures on the text, and no others
+
+Scroll it with a finger. Tap a sentence to read from there. That is all.
+
+Removed outright: the swipe between sentences and its whole engine, the
+Reverse swipe setting, tap-to-paste on the text, and tap-the-playing-sentence
+to pause. Every one fired by accident while a finger was only trying to
+scroll, and someone listening should not have to be careful where he touches.
+Tapping the sentence already playing now restarts it; the player bar pauses.
+Gone from the client, the page, the Help text, the chips and the server state.
+
+## The lit word stays on the screen
+
+Following the SENTENCE is not enough: a sentence can be taller than the
+window, and then the word being spoken is lit where nobody can see it. The
+word itself is watched.
+
+While it sits comfortably inside the reading area nothing moves, because a
+page that creeps on every word is worse than one that never moves. When the
+word crosses an edge the view jumps so the START of its sentence sits near the
+top: spoken words above, coming words below.
+
+Two shapes of sentence. In plain text it is one .sent element with a box of
+its own. In Markdown there is no such element, the sentence is a RANGE of word
+spans, so its box is built from the first and last of them. Either way, if it
+is taller than the window the word itself is used instead.
+
+Throttled to one move per 250 ms so a hand scroll is never fought, and off
+outside READ mode. The offline player follows the same rule, with its own
+scroller passed in. No centre scroll survives in any reading path: centring
+wasted the whole upper half of the screen on words already spoken.
+
 ## Read, text, edit
 
 Three small words where the two pauses used to sit.

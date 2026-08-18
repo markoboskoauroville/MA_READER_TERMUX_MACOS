@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.14
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.15
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.14%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.15%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2569,13 +2569,13 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
-                  "tapPaste": True, "floatPaste": True, "voiceBar": True,
+                  "floatPaste": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 13, "focus": False,
                   "theme": "night", "font": "sans", "lineheight": 3,
-                  "wordhl": True, "wordoffsets": {}, "swipeRev": False,
+                  "wordhl": True, "wordoffsets": {}, 
                   "rgbSent": [255, 217, 59], "rgbWord": [226, 59, 78],
                   "rgbFont": [255, 255, 255], "rgbText": None,
                   "enabledLangs": list(DEFAULT_LANGS)}
@@ -2598,7 +2598,6 @@ def load_state():
         st["_wseed4"] = True
     if not isinstance(st.get("wordoffsets"), dict):
         st["wordoffsets"] = {}
-    st["swipeRev"] = bool(st.get("swipeRev"))
     # Everything that reaches this comes from a browser, and a browser can be
     # a corrupted beacon or somebody with the console open. A negative speed
     # is not a preference, it is a broken player.
@@ -4964,8 +4963,6 @@ body.fullread .fsout{display:none !important}
 body.fullread:not(.hasfloat) > .fsout{display:flex !important}
 /* while the text is a paste target, say so with the cursor and kill the
    text selection that a tap would otherwise start */
-body.tappaste .doc, body.tappaste #offDoc{cursor:copy;
-  -webkit-user-select:none; user-select:none}
 /* ---------- FULL SCREEN MEANS FULL SCREEN ----------
    The old rules named the things to hide: header, controls, gear. That is a
    list, and a list goes stale the moment anything is added, which is exactly
@@ -5121,7 +5118,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.14 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.15 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5161,8 +5158,8 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <h3>Fastest way to read something</h3>
       <p>Copy any text, come back to this page and tap <b>Paste</b>. The
         clipboard replaces whatever was here and starts reading immediately.
-        Tap any sentence to read from there, tap the sentence that is playing
-        to pause it, and swipe sideways across the text to step a sentence.</p>
+        Tap any sentence to read from there. That is the only gesture on the
+        text; otherwise you simply scroll it with a finger.</p>
 
       <h3>The player</h3>
       <p>Either side of the play button is a small control with a minus, a
@@ -5184,10 +5181,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
         there is no seam at all between them.</p>
 
       <h3>Swiping</h3>
-      <p>Drag sideways across the text to move a sentence. Dragging to the
-        right brings the next sentence in from the right, the way a hand turns
-        a page, and dragging left goes back. If the opposite feels right to
-        you, turn on <b>Reverse swipe</b> in Settings and it swaps.</p>
+      <p>Scroll the text with a finger, the way you would any page. Tapping a
+        sentence starts reading from it. That is the only gesture on the
+        text.</p>
 
       <h3>Immersive reading</h3>
       <p>Double tap the middle of the page and everything except the text goes
@@ -5369,15 +5365,12 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="resumeTog">Remember position</button>
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
-      <button class="chip" id="swipeTog">Reverse swipe</button>
       <button class="chip" id="floatTog">Floating paste button</button>
-      <button class="chip" id="tapPasteTog">Tap text to paste</button>
       <button class="chip" id="bgResumeTog">Resume my music</button>
       <button class="chip" id="bgTestBtn">Test it</button>
     </div>
     <div class="langhint"><b>Floating paste button.</b> Drag it anywhere. Press: paste, full screen, read. In full screen it is the way out.</div>
     <div class="langhint"><b>Resume my music.</b> Asks your player to start again when you pause. Needs maread-adb.</div>
-    <div class="langhint">Swap the direction a swipe moves.</div>
   </div>
 
   <div class="group g-colour" data-eng="app">
@@ -5598,7 +5591,7 @@ const ST = {
   /* v3: two engines. Edge is the free Microsoft one this app started on;
      Speechify is keyed, English only, and brings its own word timings. */
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
-  spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
+  spSet: 0, spPerSet: 4, bothEngines: false,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
   /* null means never chosen, so the first four can be offered. An empty
      ARRAY means chosen to be none, and must be left alone. Treating those
@@ -5615,7 +5608,7 @@ const ST = {
   theme: "night", font: "serif", lineheight: 3, wordhl: true,
   rgbSent: [255,217,59], rgbWord: [226,59,78], rgbFont: [255,255,255],
   rgbText: null,
-  wordoffsets: {}, aimeta:false, resume:true, swipeRev:false,
+  wordoffsets: {}, aimeta:false, resume:true,
   gemini:{configured:false,last_error:""},
 };
 
@@ -6484,6 +6477,49 @@ function mdSpansIn(spans, a, b){
    document on every sentence change. */
 const MDLIT = {band: [], now: []};
 
+/* ---------- keeping up with the voice ----------
+   A long sentence can run past the bottom of the screen, and then the word
+   being spoken is lit somewhere nobody can see. Following the SENTENCE is not
+   enough: a sentence can be taller than the window.
+
+   So the word itself is watched. While it sits comfortably inside the reading
+   area nothing moves at all, because a page that creeps on every word is far
+   worse than one that never moves. Only when the word crosses an edge does the
+   view jump, and it jumps to put the START OF THE SENTENCE near the top: the
+   words just spoken above, the words about to come below.
+
+   Two shapes of sentence to handle. In a plain text the sentence is one .sent
+   element with a box of its own. In Markdown there is no such element, the
+   sentence is a RANGE of word spans, so its box is built from the first and
+   last of them. Either way, if it is taller than the window there is no
+   arrangement that shows all of it and the word itself is used instead. */
+function sentenceBox(el){
+  if(MD.mapped && MDLIT.band && MDLIT.band.length){
+    const f = MDLIT.band[0].getBoundingClientRect();
+    const l = MDLIT.band[MDLIT.band.length - 1].getBoundingClientRect();
+    return {top: f.top, bottom: l.bottom, height: l.bottom - f.top};
+  }
+  const s = el && el.closest ? el.closest(".sent") : null;
+  return s ? s.getBoundingClientRect() : null;
+}
+let lastAutoScroll = 0;
+function keepWordVisible(el, scroller){
+  if(!el || ST.mode !== "read") return;
+  const sc = $(scroller || "#readerScroll"); if(!sc) return;
+  const now = Date.now();
+  if(now - lastAutoScroll < 250) return;   /* never fight a scroll in progress */
+
+  const pr = sc.getBoundingClientRect();
+  const wr = el.getBoundingClientRect();
+  if(wr.top >= pr.top + 8 && wr.bottom <= pr.bottom - 70) return;  /* visible */
+
+  const sr = sentenceBox(el);
+  const roomFor = pr.height - 90;
+  const anchor = (sr && sr.height > 0 && sr.height <= roomFor) ? sr : wr;
+  lastAutoScroll = now;
+  sc.scrollBy({top: anchor.top - (pr.top + 12), behavior: "smooth"});
+}
+
 function mdUnlight(){
   for(let i = 0; i < MDLIT.band.length; i++)
     MDLIT.band[i].classList.remove("lit", "litp");
@@ -6516,7 +6552,10 @@ function mdHighlight(i, paused){
   if(sc && first){
     const r2 = first.getBoundingClientRect(), pr = sc.getBoundingClientRect();
     if(r2.top < pr.top + 40 || r2.bottom > pr.bottom - 90){
-      first.scrollIntoView({block: "center", behavior: "smooth"});
+      /* to the top, not the centre: centring wastes the whole upper half of
+         the screen on words already spoken */
+      lastAutoScroll = Date.now();
+      sc.scrollBy({top: r2.top - (pr.top + 12), behavior: "smooth"});
     }
   }
 }
@@ -6574,6 +6613,7 @@ function mdHighlightWordAt(i, mediaTime){
   CLK.lastWord = k;
   for(let j = 0; j < MDLIT.now.length; j++) MDLIT.now[j].classList.remove("now");
   MDLIT.now = (k >= 0) ? spans[k].els.slice() : [];
+  if(MDLIT.now && MDLIT.now.length) keepWordVisible(MDLIT.now[0]);
   for(let j = 0; j < MDLIT.now.length; j++) MDLIT.now[j].classList.add("now");
 }
 
@@ -6644,11 +6684,12 @@ function renderDoc(){
        playing pauses and resumes it, so the old tap-to-pause gesture still
        works where the eye already is. A drag is a sentence step, not a click,
        so it is filtered out first. */
-    span.onclick = ()=>{
-      if(swipedJustNow()) return;
-      if(ST.tapPaste) return;        /* the text is a paste target now */
-      if(i === ST.idx) togglePlay(); else jumpTo(i, true);
-    };
+    /* THE ONLY GESTURE ON THE TEXT. Scroll it with a finger, tap a sentence
+       to read from there. Nothing else: no swipe between sentences, no tap to
+       paste, no tap to pause. Every one of those fired by accident while a
+       finger was only trying to scroll, and someone who is listening should
+       not have to be careful where he touches. */
+    span.onclick = ()=>{ jumpTo(i, true); };
     doc.appendChild(span);
   });
   // start synthesising the opening sentences straight away
@@ -6656,56 +6697,6 @@ function renderDoc(){
 }
 function sentEl(i){ return $(`#doc .sent[data-i="${i}"]`); }
 
-/* ---------- swipe between sentences ----------
-   Touch events work fine in the browser, so a horizontal drag across the text
-   moves a sentence: left for the next, right for the previous. A swipe must be
-   clearly sideways (and not a scroll) before it counts, and it suppresses the
-   tap that would otherwise pause. */
-let swTouch = null, swMouse = null, swipeStamp = 0;
-function swipedJustNow(){ return (Date.now() - swipeStamp) < 400; }
-function bindSwipe(el, onPrev, onNext){
-  if(!el) return;
-  el.addEventListener("touchstart", e=>{
-    if(e.touches.length !== 1){ swTouch = null; return; }
-    const t = e.touches[0];
-    swTouch = {x:t.clientX, y:t.clientY, t:Date.now()};
-  }, {passive:true});
-  el.addEventListener("touchend", e=>{
-    if(!swTouch) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - swTouch.x, dy = t.clientY - swTouch.y;
-    const dt = Date.now() - swTouch.t;
-    swTouch = null;
-    // sideways, far enough, and not a slow scroll
-    if(Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy)*1.6 || dt > 800) return;
-    swipeStamp = Date.now();
-    swipeGo(dx, onPrev, onNext);
-  }, {passive:true});
-  /* Same gesture with a mouse. Without this there is no way to reach the
-     previous sentence on a desktop except the keyboard, because a trackpad
-     two-finger swipe arrives as a wheel event, not a touch. */
-  el.addEventListener("mousedown", e=>{
-    if(e.button !== 0){ swMouse = null; return; }
-    swMouse = {x:e.clientX, y:e.clientY, t:Date.now()};
-  });
-  el.addEventListener("mouseup", e=>{
-    if(!swMouse) return;
-    const dx = e.clientX - swMouse.x, dy = e.clientY - swMouse.y;
-    const dt = Date.now() - swMouse.t;
-    swMouse = null;
-    if(Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy)*1.6 || dt > 800) return;
-    swipeStamp = Date.now();
-    swipeGo(dx, onPrev, onNext);
-  });
-}
-/* Which way is forward. Dragging RIGHT now brings the next sentence in from
-   the right, the way a hand turns a page; dragging left goes back. That is
-   the opposite of every version up to v24, so the old direction is still
-   there as Reverse swipe in Settings. */
-function swipeGo(dx, onPrev, onNext){
-  const forward = ST.swipeRev ? (dx < 0) : (dx > 0);
-  if(forward) onNext(); else onPrev();
-}
 
 function ensureWordSpans(i){
   if(MD.mapped) return mdWordSpans(i);
@@ -6747,6 +6738,7 @@ function highlightWordAt(i, mediaTime){
   if(k === CLK.lastWord) return;          /* nothing changed: skip DOM writes */
   CLK.lastWord = k;
   spans.forEach((o, wi)=> o.el.classList.toggle("now", wi === k));
+  if(k >= 0) keepWordVisible(spans[k].el);
 }
 function clearWords(i){
   CLK.lastWord = -2;
@@ -6770,7 +6762,8 @@ function highlight(i, paused){
   const sc = $("#readerScroll");
   const r = el.getBoundingClientRect(), pr = sc.getBoundingClientRect();
   if(r.top < pr.top+40 || r.bottom > pr.bottom-90){
-    el.scrollIntoView({block:"center", behavior:"smooth"});
+    lastAutoScroll = Date.now();
+    sc.scrollBy({top: r.top - (pr.top + 12), behavior: "smooth"});
   }
   updateCounter();
 }
@@ -7324,12 +7317,10 @@ function refreshToggles(){
   { const b=$("#fullPasteTog"); if(b) b.classList.toggle("on", !!ST.fullOnPaste); }
   { const b=$("#hideTabsTog"); if(b) b.classList.toggle("on", !!ST.hideTabs); }
   document.body.classList.toggle("notabs", !!ST.hideTabs);
-  { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
   { const b=$("#voiceBarTog"); if(b) b.classList.toggle("on", !!ST.voiceBar); }
   document.body.classList.toggle("nobar", !ST.voiceBar);
-  document.body.classList.toggle("tappaste", !!ST.tapPaste);
   document.body.classList.toggle("hasfloat", !!ST.floatPaste);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
@@ -7337,7 +7328,6 @@ function refreshToggles(){
   $("#focusTog").classList.toggle("on", ST.focus);
   $("#readerView").classList.toggle("focus", ST.focus);
   $("#loopBtn").classList.toggle("on", ST.loop);
-  { const sw=$("#swipeTog"); if(sw) sw.classList.toggle("on", ST.swipeRev); }
 }
 function openSheet(){
   $("#backdrop").classList.add("show"); $("#sheet").classList.add("show");
@@ -7617,10 +7607,10 @@ function stateBody(){
         lineheight:ST.lineheight, wordhl:ST.wordhl,
         rgbSent:ST.rgbSent, rgbWord:ST.rgbWord, rgbFont:ST.rgbFont, rgbText:ST.rgbText,
         wordoffsets:ST.wordoffsets, aimeta:ST.aimeta,
-        resume:ST.resume, swipeRev:ST.swipeRev,
+        resume:ST.resume,
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
-        bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
+        bothEngines:!!ST.bothEngines,
         spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
         fullOnPaste:!!ST.fullOnPaste,
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read", pane:ST.pane||"app",
@@ -7731,7 +7721,7 @@ function bind(){
   }
 
   $("#playBtn").onclick = togglePlay;
-  bindSwipe($("#doc"), prev, next);
+  /* the text is scrolled, not swiped */
   $("#loopBtn").onclick = ()=>{ ST.loop=!ST.loop; refreshToggles(); persist();
       toast("Loop "+(ST.loop?"on":"off")); };
 
@@ -7844,14 +7834,6 @@ function bind(){
     const w=$("#catchWrap");
     if(w) w.addEventListener("click",(e)=>{ if(e.target===w) closeCatcher(); });
   }
-  { const b=$("#tapPasteTog");
-    if(b) b.onclick = ()=>{
-      ST.tapPaste = !ST.tapPaste;
-      refreshToggles(); persist();
-      toast(ST.tapPaste ? "Tap the text to paste the next one"
-                        : "Tap a sentence to read from it");
-    };
-  }
   document.querySelectorAll("#modeRow .modebtn, #offModeRow .modebtn")
     .forEach(b => { b.onclick = ()=> setMode(b.dataset.mode); });
   { const b=$("#hideTabsTog");
@@ -7887,10 +7869,6 @@ function bind(){
     };
   }
   $("#autoplayTog").onclick = ()=>{ ST.autoplay=!ST.autoplay; refreshToggles(); persist(); };
-  { const sw=$("#swipeTog"); if(sw) sw.onclick = ()=>{ ST.swipeRev=!ST.swipeRev;
-      refreshToggles(); persist();
-      toast(ST.swipeRev ? "Swipe left for the next sentence"
-                        : "Swipe right for the next sentence"); }; }
   $("#focusTog").onclick = ()=>{ ST.focus=!ST.focus; refreshToggles(); persist(); };
 
   $("#backdrop").onclick = closeSheet;
@@ -8174,20 +8152,10 @@ function wireCenterTaps(scrollSel, isOffline){
   const sc=$(scrollSel); if(!sc) return;
   let tapT=null;
   sc.addEventListener("click", (e)=>{
-    if(swipedJustNow()) return;
     /* One finger, straight to the next article. A tap on the text asks for
        the clipboard, Android offers its Paste button, and what comes back
        replaces everything and starts speaking. Nothing else may claim a tap
        while this is on, or the gesture would mean three things at once. */
-    if(ST.tapPaste){
-      e.stopPropagation(); e.preventDefault();
-      /* same rule as the floating P, so the two never disagree */
-      if(ST.fullOnPaste && !document.body.classList.contains("fullread")){
-        reqFull(); setFullread(true);
-      }
-      pasteFromClipboard();
-      return;
-    }
     const full = isFullread();
     const inZ  = inCenterZone(e.clientX, e.clientY);
     if(!full && !inZ) return;       /* ordinary tap: let the sentence handle it */
@@ -8620,8 +8588,10 @@ function offHighlightSentence(i, paused){
   el.classList.add(paused?"paused":"active");
   const sc=$("#offReaderScroll");
   const r=el.getBoundingClientRect(), pr=sc.getBoundingClientRect();
-  if(r.top<pr.top+40 || r.bottom>pr.bottom-90)
-    el.scrollIntoView({block:"center", behavior:"smooth"});
+  if(r.top<pr.top+40 || r.bottom>pr.bottom-90){
+    lastAutoScroll = Date.now();
+    sc.scrollBy({top: r.top - (pr.top + 12), behavior:"smooth"});
+  }
 }
 function offClearWords(i){
   const sp=OFF.spans[i]; if(sp) sp.forEach(o=>o.el.classList.remove("now"));
@@ -8636,6 +8606,7 @@ function offHighlightWord(i, t){
   const key=i*100000+k;
   if(key===OFF.lastWord) return; OFF.lastWord=key;
   spans.forEach((o,wi)=>o.el.classList.toggle("now", wi===k));
+  if(k>=0) keepWordVisible(spans[k].el, "#offReaderScroll");
 }
 /* v11: the offline player gets the same drift-corrected clock as the online
    reader (its own instance, so the two never fight), plus the per-voice sync
@@ -8942,7 +8913,6 @@ function boot(){
        something to pretend to remember. */
     ST.mode = (st.mode === "text") ? "text" : "read";
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
-    ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
     if(typeof st.fpX === "number") ST.fpX = st.fpX;
     if(typeof st.fpY === "number") ST.fpY = st.fpY;
@@ -9004,7 +8974,6 @@ function boot(){
     applySpeed(); applyVolume(); applyGap(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
     ST.aimeta = !!st.aimeta; ST.resume = (st.resume!==false);
-    ST.swipeRev = !!st.swipeRev;
     ST.gemini = {configured:false, last_error:""};
     /* Everything is restored. From here it is safe to write. */
     booted = true;
