@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.4
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.5
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.4%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.5%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -952,51 +952,6 @@ LANGS = [
      "vkeys":("hrF","hrM"),
      "female":("hr-HR-GabrijelaNeural", "Gabrijela"),
      "male":  ("hr-HR-SreckoNeural",    "Srecko")},
-    {"key":"bs",  "label":"Bosnian",                 "native":"Bosanski",
-     "vkeys":("bsF","bsM"),
-     "female":("bs-BA-VesnaNeural",     "Vesna"),
-     "male":  ("bs-BA-GoranNeural",     "Goran")},
-    {"key":"sr",  "label":"Serbian",                 "native":"Srpski",
-     "vkeys":("srF","srM"),
-     "female":("sr-RS-SophieNeural",    "Sophie"),
-     "male":  ("sr-RS-NicholasNeural",  "Nicholas")},
-    {"key":"mk",  "label":"Macedonian",              "native":"Makedonski",
-     "vkeys":("mkF","mkM"),
-     "female":("mk-MK-MarijaNeural",    "Marija"),
-     "male":  ("mk-MK-AleksandarNeural","Aleksandar")},
-    {"key":"sq",  "label":"Albanian",                "native":"Shqip",
-     "vkeys":("sqF","sqM"),
-     "female":("sq-AL-AnilaNeural",     "Anila"),
-     "male":  ("sq-AL-IlirNeural",      "Ilir")},
-    {"key":"sl",  "label":"Slovenian",               "native":"Slovenščina",
-     "vkeys":("slF","slM"),
-     "female":("sl-SI-PetraNeural",     "Petra"),
-     "male":  ("sl-SI-RokNeural",       "Rok")},
-    {"key":"de",  "label":"German",                  "native":"Deutsch",
-     "vkeys":("deF","deM"),
-     "female":("de-DE-KatjaNeural",     "Katja"),
-     "male":  ("de-DE-ConradNeural",    "Conrad")},
-    {"key":"fr",  "label":"French",                  "native":"Français",
-     "vkeys":("frF","frM"),
-     "female":("fr-FR-DeniseNeural",    "Denise"),
-     "male":  ("fr-FR-HenriNeural",     "Henri")},
-    {"key":"it",  "label":"Italian",                 "native":"Italiano",
-     "vkeys":("itF","itM"),
-     "female":("it-IT-ElsaNeural",      "Elsa"),
-     "male":  ("it-IT-DiegoNeural",     "Diego")},
-    {"key":"ta",  "label":"Tamil",                   "native":"தமிழ்",
-     "vkeys":("taF","taM"),
-     "female":("ta-IN-PallaviNeural",   "Pallavi"),
-     "male":  ("ta-IN-ValluvarNeural",  "Valluvar")},
-    {"key":"hi",  "label":"Hindi",                   "native":"हिन्दी",
-     "uses":"Sanskrit",
-     "vkeys":("hiF","hiM"),
-     "female":("hi-IN-SwaraNeural",     "Swara"),
-     "male":  ("hi-IN-MadhurNeural",    "Madhur")},
-    {"key":"es",  "label":"Spanish",                 "native":"Español",
-     "vkeys":("esF","esM"),
-     "female":("es-ES-ElviraNeural",    "Elvira"),
-     "male":  ("es-ES-AlvaroNeural",    "Alvaro")},
 ]
 
 # Default set of languages shown in the top picker (the two the app has always
@@ -2535,6 +2490,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "tapPaste": True, "floatPaste": True, "voiceBar": True,
                   "spPicked": [], "fullOnPaste": True, "hideTabs": False,
+                  "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
@@ -2586,6 +2542,8 @@ def load_state():
         st["wgap"] = max(0.0, min(2.0, round(float(st.get("wgap", 0.0)), 2)))
     except (TypeError, ValueError):
         st["wgap"] = 0.0
+    if st.get("mode") not in ("read", "text"):
+        st["mode"] = "read"          # edit is never restored
     if st.get("engine") not in ("edge", "speechify"):
         st["engine"] = "edge"
     if st.get("spAccent") not in SP_ACCENT_KEYS:
@@ -4453,11 +4411,13 @@ body.wordhl .sent.paused .w.now{
 #syncRange{width:100%; accent-color:var(--act)}
 .syncends{display:flex; justify-content:space-between; font-size:11px;
   color:var(--faint); margin-top:2px}
+/* One X and nothing else. The version sits in the corner beside it, so it
+   costs no row of its own. */
 .sheet-head{position:sticky; top:0; z-index:6; background:var(--bg2);
-  display:flex; flex-direction:column; align-items:center; gap:2px;
-  margin:0 -16px 14px; padding:2px 16px 12px; border-bottom:1px solid var(--line)}
-.sheet-head-text{display:flex; flex-direction:column; gap:2px; text-align:center}
-.sheet-title{margin:0}
+  display:flex; align-items:center; justify-content:center;
+  margin:0 -16px 12px; padding:2px 16px 10px; border-bottom:1px solid var(--line)}
+.sheet-ver{position:absolute; right:16px; top:50%; transform:translateY(-60%);
+  font-size:11px; color:var(--faint); letter-spacing:.02em}
 /* One X, in the middle, pinned to the top of the sheet. It does not scroll
    away and it says nothing, because there is nothing to say. */
 .sheet-x{flex:0 0 auto; width:46px; height:46px; margin:0 0 6px; padding:0;
@@ -4685,6 +4645,32 @@ body.hassession .tab.player{display:block}
 .setnum:active{color:var(--text)}
 .setlegend{display:flex; gap:14px; font-size:11px; color:var(--faint);
   margin:2px 0 10px; align-items:center}
+/* the first row: two switches and the sentence pause, sharing the width */
+.toprow{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.toprow .chip{flex:1 1 auto}
+.setstep{flex:0 0 auto; border:1px solid var(--line); border-radius:12px;
+  padding:0 2px; background:var(--panel)}
+/* The three modes, in the space the two pauses used to take. Same small
+   uppercase lettering as the labels under the steppers, because they sit in
+   the same row and should read as the same kind of thing. */
+.modes{gap:2px}
+.modebtn{border:none; background:transparent; color:var(--faint);
+  font-size:8.5px; letter-spacing:.09em; text-transform:uppercase;
+  padding:10px 9px; line-height:1; border-radius:8px}
+.modebtn.on{color:var(--text); font-weight:700}
+.modebtn:active{color:var(--dim)}
+/* TEXT mode: nothing but the words. No sentence tinting, no word marker, no
+   colour at all, so it can simply be read with the eye. */
+body.mode-text .sent, body.mode-text .sent *{background:none !important;
+  color:#fff !important; box-shadow:none !important; border-radius:0 !important}
+body.mode-text .doc, body.mode-text #offDoc{color:#fff}
+/* EDIT mode: the text becomes a real editable field. */
+body.mode-edit .reader-scroll .doc{outline:none; caret-color:var(--tune);
+  -webkit-user-select:text; user-select:text; white-space:pre-wrap}
+body.mode-edit .sent, body.mode-edit .sent *{background:none !important;
+  color:#fff !important; box-shadow:none !important}
+body.mode-edit .yt-play{opacity:.3; pointer-events:none}
+body.mode-text .yt-play{opacity:.3; pointer-events:none}
 .setlegend i{display:inline-block; width:12px; height:12px; border-radius:4px;
   margin-right:5px; vertical-align:-2px; border:2px solid; background:none}
 .spstate{font-size:12px; color:var(--faint); margin:8px 0 2px; line-height:1.5}
@@ -4848,17 +4834,10 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
           title="How much is left. Press to clear and start again.">0 / 0</button>
       </div>
       <div class="yt-bar">
-        <div class="ytgroup">
-          <div class="ytstep">
-            <button class="yt-mini" data-step="wgap" data-d="-1" title="Shorter pause between words">&#8722;</button>
-            <button class="yt-num" data-reset="wgap" title="Tap to reset to 0.00"><b id="wgapNum">0.00</b><i>words</i></button>
-            <button class="yt-mini" data-step="wgap" data-d="1" title="Longer pause between words">+</button>
-          </div>
-          <div class="ytstep">
-            <button class="yt-mini" data-step="gap" data-d="-1" title="Shorter pause between sentences">&#8722;</button>
-            <button class="yt-num" data-reset="gap" title="Tap to reset to 0.00"><b id="gapNum">0.00</b><i>sentences</i></button>
-            <button class="yt-mini" data-step="gap" data-d="1" title="Longer pause between sentences">+</button>
-          </div>
+        <div class="ytgroup modes" id="modeRow">
+          <button class="modebtn on" data-mode="read">read</button>
+          <button class="modebtn" data-mode="text">text</button>
+          <button class="modebtn" data-mode="edit">edit</button>
         </div>
         <button class="yt-play" id="playBtn" title="Play / Pause"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L8.53 4.65A1 1 0 0 0 7 5.5z"/></svg></button>
         <div class="ytstep">
@@ -4903,17 +4882,10 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
           title="How much is left. Press to clear and start again.">0 / 0</button>
       </div>
       <div class="yt-bar">
-        <div class="ytgroup">
-          <div class="ytstep">
-            <button class="yt-mini" data-step="wgap" data-d="-1" title="Shorter pause between words">&#8722;</button>
-            <button class="yt-num" data-reset="wgap" title="Tap to reset to 0.00"><b id="wgapNum2">0.00</b><i>words</i></button>
-            <button class="yt-mini" data-step="wgap" data-d="1" title="Longer pause between words">+</button>
-          </div>
-          <div class="ytstep">
-            <button class="yt-mini" data-step="gap" data-d="-1" title="Shorter pause between sentences">&#8722;</button>
-            <button class="yt-num" data-reset="gap" title="Tap to reset to 0.00"><b id="gapNum2">0.00</b><i>sentences</i></button>
-            <button class="yt-mini" data-step="gap" data-d="1" title="Longer pause between sentences">+</button>
-          </div>
+        <div class="ytgroup modes" id="offModeRow">
+          <button class="modebtn on" data-mode="read">read</button>
+          <button class="modebtn" data-mode="text">text</button>
+          <button class="modebtn" data-mode="edit">edit</button>
         </div>
         <button class="yt-play" id="offPlay" title="Play / Pause"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L8.53 4.65A1 1 0 0 0 7 5.5z"/></svg></button>
         <div class="ytstep">
@@ -4930,7 +4902,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.4 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.5 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5045,33 +5017,26 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 <div class="sheet" id="sheet">
   <div class="sheet-head">
     <button class="sheet-x" id="sheetX" title="Close">&#10005;</button>
-    <div class="sheet-head-text">
-      <h2 class="sheet-title">Settings</h2>
-      <small class="sheet-note">MA Reader <b id="appVerTop"></b> &middot;
-        everything here is remembered for next time.</small>
-    </div>
+    <span class="sheet-ver" id="appVerTop"></span>
   </div>
 
   <!-- Two engines, two buttons, and the cards below follow whichever is
        chosen. Everything to do with voices is engine-shaped, so it hides;
        speed, the pauses, the text and the colours belong to both and stay. -->
-  <div class="wsub" style="margin-top:0">After pasting</div>
-  <div class="chips" style="margin:0 0 6px">
+  <div class="chips toprow" id="bothWrap" style="margin:0 0 14px">
     <button class="chip" id="fullPasteTog">Go full screen</button>
-  </div>
-  <div class="langhint" style="margin-bottom:12px">The app always opens normal.
-    This decides where a paste takes you.</div>
-
-  <div class="wsub">The tab row</div>
-  <div class="chips" id="bothWrap" style="margin:0 0 6px">
     <button class="chip" id="hideTabsTog">Hide the tabs</button>
+    <div class="ytstep setstep">
+      <button class="yt-mini" data-step="gap" data-d="-1" title="Shorter pause between sentences">&#8722;</button>
+      <button class="yt-num" data-reset="gap" title="Tap to reset to 0.00"><b id="gapNum">0.00</b><i>sentences</i></button>
+      <button class="yt-mini" data-step="gap" data-d="1" title="Longer pause between sentences">+</button>
+    </div>
   </div>
-  <div class="langhint" style="margin-bottom:12px">Leaves only the gear.</div>
   <div class="engtabs" id="engTabs">
     <button class="engtab" data-engine="edge">
-      <b>Edge</b><small>free &middot; 13 languages</small></button>
+      <b>Edge</b></button>
     <button class="engtab" data-engine="speechify">
-      <b>Speechify</b><small>keyed &middot; English only</small></button>
+      <b>Speechify</b></button>
   </div>
 
 
@@ -5083,7 +5048,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="chips">
       <button class="chip" id="voiceBarTog">Voice buttons on top</button>
     </div>
-    <div class="langhint">Off: the whole row leaves the top of the reader.</div>
+
     <div class="wsub">The voice</div>
     <div class="spgrid" id="edgeVoiceGrid"></div>
     <div class="setlegend">
@@ -5091,7 +5056,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <span><i style="border-color:var(--homme)"></i>male</span>
     </div>
     <div class="wsub">Languages</div>
-    <div class="langhint">Tick a language to add its two voices.</div>
+
     <div class="lang-tools">
       <button id="langAll">Select all</button>
       <button id="langNone">Clear</button>
@@ -5101,7 +5066,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 
   <div class="group g-sp" data-eng="speechify">
     <h3>Speechify voices</h3>
-    <div class="langhint">English only. Tick the voices you want on top; any number.</div>
+
     <div class="accrow" id="spAccents"></div>
 
     <div class="setbar">
@@ -5142,12 +5107,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button data-step="speed" data-d="-1">&#8722;</button>
       <span class="val" id="speedVal">1.00&times;</span>
       <button data-step="speed" data-d="1">+</button>
-    </div>
-    <div class="rowctl">
-      <span class="lab">Pause between words</span>
-      <button data-step="wgap" data-d="-1">&#8722;</button>
-      <span class="val" id="wgapVal">0.00</span>
-      <button data-step="wgap" data-d="1">+</button>
     </div>
     <div class="rowctl">
       <span class="lab">Pause between sentences</span>
@@ -5397,7 +5356,11 @@ const GAP_MIN = -1.0, GAP_MAX = 3.0, GAP_STEP = 0.05;
    That is also why it only runs upward from zero. Making a silence longer is
    free; making it shorter would mean cutting audio, and there is no way to
    have less silence than the voice actually recorded. */
-const WGAP_MIN = 0.00, WGAP_MAX = 2.00, WGAP_STEP = 0.05;
+/* The pause between WORDS is gone, in the interface and in the engine.
+   It worked, but it was not used: a pause long enough to notice made a page
+   take half an hour, and anything shorter was indistinguishable from nothing.
+   The silence map it rode on is still measured, because the word highlight
+   and the reading time estimate both use it for other purposes. */
 const THEMES = ["day","sepia","night"];
 
 /* ---------- app state ---------- */
@@ -5410,6 +5373,7 @@ const ST = {
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
   voiceBar: true, spPicked: [], fullOnPaste: true, hideTabs: false,
+  mode: "read",
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -6109,14 +6073,6 @@ function estSeconds(from){
   for(let i = Math.max(0, from | 0); i < S.length; i++){
     const s = S[i] || "";
     sec += (s.length * rate) / sp;
-    if(ST.wgap > 0){
-      /* a real count of the silences if we measured them, else one between
-         each pair of words, which is what they nearly always are */
-      const runs = silCache.get(i);
-      const gaps = (runs && runs.length) ? runs.length
-                 : Math.max(0, s.trim().split(/\s+/).length - 1);
-      sec += gaps * ST.wgap;
-    }
     n++;
   }
   sec += Math.max(0, n - 1) * (ST.gap || 0);   /* may be negative: overlap */
@@ -6313,8 +6269,10 @@ function wgRunAt(runs, t){        /* binary search: zero cost per frame */
    at no other speed, ever. The only thing this function can do is stop it and
    start it again, and it only ever does that inside measured silence. */
 function wordGap(w, el, runs, isOn){
-  if(w.hold) return 0;                      /* still waiting out a silence */
-  if(!ST.wgap) return 1;                    /* the control is at rest */
+  return 1;                                 /* the word pause was removed */
+  /* eslint-disable no-unreachable */
+  if(w.hold) return 0;
+  if(!ST.wgap) return 1;
   if(!runs || !runs.length) return 1;       /* nothing measured for this clip */
   const k = wgRunAt(runs, el.currentTime || 0);
   if(k < 0) return 1;                       /* we are inside a word */
@@ -6527,11 +6485,7 @@ function applyGap(){
   setText("#gapVal", t); setText("#gapNum", t); setText("#gapNum2", t);
   try{ updateCounter(); }catch(e){}
 }
-function applyWgap(){
-  const t = ST.wgap.toFixed(2);
-  setText("#wgapVal", t); setText("#wgapNum", t); setText("#wgapNum2", t);
-  try{ updateCounter(); }catch(e){}
-}
+function applyWgap(){ /* the word pause was removed */ }
 function applySize(){
   const fs = 13 + ST.size*2;                 // 15..41 px
   const col = 400 + ST.size*46;
@@ -6615,7 +6569,7 @@ function applyWordHl(){
 function resetTune(kind){
   if(kind==="speed"){ ST.speed = 1.0; applySpeed(); toast("Speed 1.00"); }
   else if(kind==="gap"){ ST.gap = 0.0; applyGap(); toast("Sentence pause 0.00"); }
-  else if(kind==="wgap"){ ST.wgap = 0.0; applyWgap(); toast("Word pause 0.00"); }
+
   else return;
   persist();
 }
@@ -6628,10 +6582,6 @@ function step(kind, d){
     ST.gap = Math.max(GAP_MIN, Math.min(GAP_MAX,
                Math.round((ST.gap + d*GAP_STEP)*100)/100));
     applyGap();
-  } else if(kind==="wgap"){
-    ST.wgap = Math.max(WGAP_MIN, Math.min(WGAP_MAX,
-                Math.round((ST.wgap + d*WGAP_STEP)*100)/100));
-    applyWgap();
   } else if(kind==="size"){
     ST.size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, ST.size + d)); applySize();
   } else if(kind==="lh"){
@@ -6926,7 +6876,7 @@ function stateBody(){
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
         spPicked:(ST.spPicked||[]), fullOnPaste:!!ST.fullOnPaste,
-        hideTabs:!!ST.hideTabs,
+        hideTabs:!!ST.hideTabs, mode:ST.mode||"read",
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs});
@@ -7155,6 +7105,8 @@ function bind(){
                         : "Tap a sentence to read from it");
     };
   }
+  document.querySelectorAll("#modeRow .modebtn, #offModeRow .modebtn")
+    .forEach(b => { b.onclick = ()=> setMode(b.dataset.mode); });
   { const b=$("#hideTabsTog");
     if(b) b.onclick = ()=>{
       ST.hideTabs = !ST.hideTabs;
@@ -7288,6 +7240,48 @@ function jumpToPlayer(){
   toast("Nothing is loaded yet.");
 }
 /* ---------- fullscreen reading ---------- */
+/* ---------- read, text, edit ----------
+   READ is the app as it has always been: it speaks, and the word lights up.
+   TEXT strips every colour and marker so the page can simply be read with the
+   eye, scrolling like any article.
+   EDIT makes the text itself editable, to cut a header off or fix a mistype
+   before reading it.
+   Play belongs to READ alone: in the other two there is nothing to follow,
+   and a voice talking over an edit is a nuisance rather than a feature. */
+function setMode(m){
+  if(m !== "read" && m !== "text" && m !== "edit") m = "read";
+  if(m !== "read" && ST.playing){ try{ pause(); }catch(e){} }
+  if(ST.mode === "edit" && m !== "edit") commitEdit();
+  ST.mode = m;
+  document.body.classList.toggle("mode-text", m === "text");
+  document.body.classList.toggle("mode-edit", m === "edit");
+  document.querySelectorAll("#modeRow .modebtn, #offModeRow .modebtn")
+    .forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+  applyEditable();
+  persist();
+}
+function applyEditable(){
+  const on = (ST.mode === "edit");
+  ["#doc", "#offDoc"].forEach(sel => {
+    const el = $(sel); if(!el) return;
+    try{
+      el.contentEditable = on ? "true" : "false";
+      el.spellcheck = false;
+    }catch(e){}
+  });
+}
+/* Leaving EDIT keeps what was typed: the text is read back out of the page,
+   saved as a new text, and re-split into sentences so it can be spoken. */
+function commitEdit(){
+  const el = $("#doc"); if(!el) return;
+  const t = (el.innerText || "").replace(/\u00a0/g, " ").trim();
+  if(!t) return;
+  const was = (ST.sentences || []).join(" ").trim();
+  if(t === was) return;                    /* nothing was actually changed */
+  const box = $("#pasteBox"); if(box) box.value = t;
+  readTextNow(t);
+}
+
 function setFullread(on){
   document.body.classList.toggle("fullread", !!on);
   paintFloat();
@@ -8162,6 +8156,10 @@ function boot(){
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : [];
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
     ST.hideTabs = !!st.hideTabs;
+    /* EDIT is never restored: coming back into a text editor you did not ask
+       for is a surprise, and an unsaved edit from a previous session is not
+       something to pretend to remember. */
+    ST.mode = (st.mode === "text") ? "text" : "read";
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
@@ -8195,8 +8193,6 @@ function boot(){
     ST.speed = st.speed||1.0; ST.volume = st.volume??100;
     ST.gap = Math.max(GAP_MIN, Math.min(GAP_MAX,
                (typeof st.gap === "number") ? st.gap : 0.0));
-    ST.wgap = Math.max(WGAP_MIN, Math.min(WGAP_MAX,
-                (typeof st.wgap === "number") ? st.wgap : 0.0));
     ST.speed = Math.max(SPEED_MIN, Math.min(SPEED_MAX, ST.speed));
     ST.loop = !!st.loop;
     ST.size = st.size||4; ST.autoplay = (st.autoplay!==false); ST.focus = !!st.focus;
@@ -8229,7 +8225,7 @@ function boot(){
     ST.gemini = {configured:false, last_error:""};
     /* Everything is restored. From here it is safe to write. */
     booted = true;
-    bindV2(); refreshToggles(); showHome();
+    bindV2(); refreshToggles(); setMode(ST.mode); showHome();
     /* Deliberately nothing about full screen here. The app always opens in
        the normal view, whatever the setting says. Full screen belongs to the
        act of pasting, which is a gesture, which is also the only thing the

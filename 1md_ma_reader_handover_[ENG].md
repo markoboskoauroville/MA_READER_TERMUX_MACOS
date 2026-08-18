@@ -161,8 +161,8 @@ browser because it is only a text field.
 
 ## Other features
 
-    three controls      word pause and sentence pause on the left, play in the
-                        middle, speed on the right
+    three modes         read, text, edit on the left, play in the middle,
+                        speed on the right
     time to read        "12 / 47   8:30", measured from clips already spoken
                         and estimated at 14.5 characters a second for the rest,
                         with speed and both pauses folded in. Pressing it
@@ -206,6 +206,39 @@ Settings line.
 The FILENAME never changes. It names the line, 3, and maread-update fetches it
 by that name; renaming the file on every build would break the one command
 Baba actually types.
+
+## Read, text, edit
+
+Three small words where the two pauses used to sit.
+
+    READ   the app as it has always been: it speaks, the word lights up
+    TEXT   every colour and marker stripped, plain white, scroll and read
+           it with the eye
+    EDIT   the text itself becomes editable, to cut a header off or fix a
+           mistype before reading
+
+Play belongs to READ alone and is dimmed in the other two: there is nothing to
+follow, and a voice talking over an edit is a nuisance. Switching out of EDIT
+commits what was typed, re-splitting it into sentences, but only if it
+actually changed. EDIT is never restored on startup; coming back into a text
+editor nobody asked for is a surprise.
+
+## The word pause was removed
+
+Interface and engine. It worked, and the mechanism was sound, but it was not
+used: a pause long enough to notice made a page take half an hour, and
+anything shorter was indistinguishable from nothing. The silence map it rode
+on is still measured, because the word highlight needs it.
+
+The sentence pause moved into the first row of Settings, in the same stepper
+shape, since it is set once and left.
+
+## Edge speaks two languages
+
+English and Croatian, four voices. The other eleven were removed outright
+rather than hidden. An old settings file listing them simply loses them on
+load, and a text cached under a removed voice answers a clean error rather
+than half-playing.
 
 ## The Settings sheet
 
