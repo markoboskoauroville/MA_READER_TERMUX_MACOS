@@ -196,6 +196,17 @@ TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
 
+## The version moves on every build
+
+The visible version is v3.N and N goes up on every push, however small, so a
+change can be pointed at and named. Run bump.py before pushing; it changes all
+three places at once, the edition comment, the terminal banner and the
+Settings line.
+
+The FILENAME never changes. It names the line, 3, and maread-update fetches it
+by that name; renaming the file on every build would break the one command
+Baba actually types.
+
 ## Where the settings live
 
 One file, ~/.maread-web/web_state.json, in Termux private storage. Nothing
@@ -206,6 +217,14 @@ off the device. Carried out and put back on every install, together with its
 Written atomically: temp file, fsync, rename over the top, previous copy kept
 as .bak and used if the main one will not parse. Read back through clamps, so
 a corrupted beacon cannot leave a negative speed behind.
+
+NOTHING is saved until boot has finished restoring. bind() makes every control
+live at the top of boot, but ST is not filled in until five requests return,
+one of which asks Speechify for its catalogue and can be slow. In that window
+the interface runs on FACTORY DEFAULTS, and any of the 34 places that call
+persist() would write those defaults over the file. A booted flag gates all
+three save paths, and the Speechify lookup is raced against a four second
+clock so it can never hold the app in defaults.
 
 Saved on a 250 ms timer to coalesce a burst, AND flushed by sendBeacon on
 visibilitychange, pagehide and blur. That second half is not optional: on
@@ -403,6 +422,12 @@ nothing. The installer used to kill it silently. It now says so and asks:
       process      12345
       [K] kill it and install
       [Q] leave it alone, change nothing
+
+If there are saved settings and the menu was used, it also offers [K] keep or
+[W] wipe them, so a settings file written by a much older version can be
+thrown away deliberately. Keys are never part of that question and are always
+kept. maread-update never asks, because it runs in the same terminal and the
+question would appear on every single update.
 
 Q changes nothing and exits. K stops it, TERM first and KILL after five
 seconds, and only installs once nothing is left running. If it cannot be

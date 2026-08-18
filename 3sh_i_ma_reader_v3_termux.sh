@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.1
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.1%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -635,7 +635,9 @@ if [ -z "$MODE" ]; then
   fi
 fi
 
+FROMMENU=0
 while [ -z "$MODE" ]; do
+  FROMMENU=1
   printf '   %swhat now%s\n' "$B$GOLD" "$OFF"
   rule
   printf '    %s[I]%s %sinstall or update, add whatever is missing%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
@@ -808,10 +810,40 @@ fi
 STASH=""
 if [ -d "$APPDIR" ]; then
 
-  # 2. carry the keys and settings out
+  # 2. keep or wipe?
+  # Settings gain and lose keys as the app changes, and a file written by a
+  # much older version can leave the app in a state nobody designed. So when
+  # there is one, say so and let it be thrown away deliberately. Keys are
+  # never part of this question: they are always kept.
+  # Asked only when the menu was used, never on maread-update. An update runs
+  # in the same terminal, so the tty test alone would put this question in
+  # front of him on every single update, which is friction he did not ask for.
+  WIPESET=0
+  if [ -f "$APPDIR/web_state.json" ] && [ -t 0 ] && [ "$FROMMENU" = "1" ]; then
+    echo ""
+    printf '   %syou have saved settings%s\n' "$B$GOLD" "$OFF"
+    rule
+    printf '    %s[K]%s %skeep them%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+    printf '    %s[W]%s %swipe them, start at the factory settings%s\n' "$KEY" "$OFF" "$DIM" "$OFF"
+    printf '    %s(your keys are kept either way)%s\n' "$DIM" "$OFF"
+    rule
+    printf '\n   %s>%s ' "$AMBER" "$OFF"
+    KS="$(getkey)"; echo ""
+    case "$KS" in
+      w|W) WIPESET=1
+           printf '   %ssettings will be wiped%s\n' "$CYAN" "$OFF" ;;
+      *)   printf '   %ssettings kept%s\n' "$DIM" "$OFF" ;;
+    esac
+  fi
+
+  # 3. carry the keys and settings out
   STASH="$(mktemp -d "${TMPDIR:-/tmp}/maread-keep.XXXXXX")"
   SAVED=0
   for f in $KEEP; do
+    case "$f" in
+      web_state.json|web_state.json.bak)
+        [ "$WIPESET" = "1" ] && continue ;;   # deliberately left behind
+    esac
     if [ -f "$APPDIR/$f" ]; then
       cp -p "$APPDIR/$f" "$STASH/$f" 2>/dev/null && SAVED=$((SAVED+1))
     fi
@@ -4883,7 +4915,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.1 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6835,6 +6867,18 @@ function updatePasteHint(){
    private storage. Nothing else on the phone can read or write it, and it is
    carried out and put back whenever the app is reinstalled. */
 let persistT=null, persistDue=null;
+
+/* NOTHING may be saved until the saved settings have been read back and put
+   into ST. This is not a nicety, it was the bug.
+   bind() makes every control live at the very top of boot, but ST is not
+   filled in until five requests have come back, one of which asks Speechify
+   for its catalogue and can take seconds on a poor connection. In that window
+   the interface is running on FACTORY DEFAULTS, and any of the thirty four
+   places that call persist() would write those defaults straight over the
+   file. Change your settings, restart, touch one thing while it is still
+   loading, and everything is back to how it shipped.
+   So: the gate stays shut until boot has finished restoring. */
+let booted = false;
 function stateBody(){
   return JSON.stringify({voice:ST.voice, speed:ST.speed, volume:ST.volume,
         gap:ST.gap, wgap:ST.wgap, loop:ST.loop, size:ST.size, autoplay:ST.autoplay,
@@ -6855,6 +6899,7 @@ function stateBody(){
 
 /* Send it now, whatever else was pending. */
 function persistNow(){
+  if(!booted) return Promise.resolve();
   clearTimeout(persistT); persistT = null;
   const body = stateBody();
   persistDue = null;
@@ -6866,7 +6911,7 @@ function persistNow(){
    that is guaranteed to leave. sendBeacon takes a Blob and needs no response,
    which is why it survives an unload when a fetch does not. */
 function persistBeacon(){
-  if(!persistDue) return;
+  if(!booted || !persistDue) return;
   const body = persistDue;
   persistDue = null;
   clearTimeout(persistT); persistT = null;
@@ -6884,6 +6929,7 @@ function persistBeacon(){
 }
 
 function persist(){
+  if(!booted) return;                /* see the note above: this is the bug */
   persistDue = stateBody();          /* remember it BEFORE the timer, so a
                                         freeze cannot lose what was pending */
   clearTimeout(persistT);
@@ -8037,7 +8083,14 @@ function boot(){
     api("/api/voices").then(r=>r.json()),
     api("/api/state").then(r=>r.json()),
     api("/api/langs").then(r=>r.json()).catch(()=>({langs:[],default:["en","hr"]})),
-    api("/api/speechify/status").then(r=>r.json()).catch(()=>null),
+    /* Raced against a clock. This one asks Speechify for its catalogue and
+       can be slow or hang on a poor connection, and the settings behind it
+       must not wait: better to start with no Speechify voices, which the
+       Settings sheet can refresh, than to sit on defaults. */
+    Promise.race([
+      api("/api/speechify/status").then(r=>r.json()).catch(()=>null),
+      new Promise(r=>setTimeout(()=>r(null), 4000))
+    ]),
     api("/api/browser").then(r=>r.json()).catch(()=>({mode:"chrome"})),
   ]).then(([voices, st, lc, sp, br])=>{
     ST.browser = (br && br.mode) || "chrome";
@@ -8128,6 +8181,8 @@ function boot(){
     ST.aimeta = !!st.aimeta; ST.resume = (st.resume!==false);
     ST.swipeRev = !!st.swipeRev;
     ST.gemini = {configured:false, last_error:""};
+    /* Everything is restored. From here it is safe to write. */
+    booted = true;
     bindV2(); refreshToggles(); showHome();
     refreshGemini();
   }).catch(()=>{ setStatus("Could not reach the server."); });
