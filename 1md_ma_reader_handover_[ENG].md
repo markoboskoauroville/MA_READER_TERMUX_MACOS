@@ -237,7 +237,7 @@ being lost.
 Generated from the shipped page, so it cannot drift. All live in the
 Settings sheet and all are remembered.
 
-    Start in full screen     startFullTog
+    Go full screen           fullPasteTog
     Voice buttons on top     voiceBarTog
     Auto-play on open        autoplayTog
     Remember position        resumeTog
@@ -299,12 +299,21 @@ as redundant: an engine with nothing ticked, or no language ticked, already
 contributes nothing, and the ticks are the honest control because they say
 WHICH voices as well as whether.
 
-That row now carries "Start in full screen" instead. It opens straight into
-the reading view. Only OUR furniture can be hidden at load: a page cannot
-demand the browser's own full screen without a gesture to hang it on, and a
-page that just loaded has none. So in a tab the address bar stays until the
-first press of the P; installed to the home screen there is nothing to hide
-and this is genuinely full screen.
+That row now carries "Go full screen" under the heading "After pasting".
+
+THE APP ALWAYS OPENS NORMAL. Full screen is a consequence of PASTING, never of
+launching. That is both what Baba wants and the only thing that can work: a
+page cannot demand the browser's full screen without a gesture to hang the
+request on, and a page that has just loaded has none. Pasting is a gesture.
+
+With the setting on, a press of the P asks for full screen inside that gesture
+and then pastes. With it off, the paste happens and the view stays normal.
+Tapping the text to paste follows exactly the same rule, so the two can never
+disagree. If the browser refuses the request, our own furniture still hides
+and the reading still starts.
+
+In a tab the address bar stays until the first press of the P; installed to
+the home screen there is nothing to hide and this is genuinely full screen.
 
 If the floating P is switched off, the corner exit button comes back in full
 screen. Full screen with no way out is a trap, and the app promises he is

@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.2
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.3
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.2%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.3%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2534,7 +2534,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "tapPaste": True, "floatPaste": True, "voiceBar": True,
-                  "spPicked": [], "startFull": False,
+                  "spPicked": [], "fullOnPaste": True,
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 4, "focus": False,
                   "theme": "night", "font": "serif", "lineheight": 3,
@@ -4919,7 +4919,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.2 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.3 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5045,12 +5045,12 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <!-- Two engines, two buttons, and the cards below follow whichever is
        chosen. Everything to do with voices is engine-shaped, so it hides;
        speed, the pauses, the text and the colours belong to both and stay. -->
-  <div class="wsub" style="margin-top:0">How it starts</div>
+  <div class="wsub" style="margin-top:0">After pasting</div>
   <div class="chips" id="bothWrap" style="margin:0 0 6px">
-    <button class="chip" id="startFullTog">Start in full screen</button>
+    <button class="chip" id="fullPasteTog">Go full screen</button>
   </div>
-  <div class="langhint" style="margin-bottom:12px">Opens straight into the
-    reading view, nothing but the text and the P.</div>
+  <div class="langhint" style="margin-bottom:12px">The app always opens normal.
+    This decides where a paste takes you.</div>
   <div class="engtabs" id="engTabs">
     <button class="engtab" data-engine="edge">
       <b>Edge</b><small>free &middot; 13 languages</small></button>
@@ -5393,7 +5393,7 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false, tapPaste: true,
   floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
-  voiceBar: true, spPicked: [], startFull: false,
+  voiceBar: true, spPicked: [], fullOnPaste: true,
   tid: "", title: "", sentences: [],
   idx: 0, playing: false,
   speed: 1.0, volume: 100, gap: 0.0, wgap: 0.0, loop: false,
@@ -6626,7 +6626,7 @@ function step(kind, d){
 
 /* ---------- modes / sheet ---------- */
 function refreshToggles(){
-  { const b=$("#startFullTog"); if(b) b.classList.toggle("on", !!ST.startFull); }
+  { const b=$("#fullPasteTog"); if(b) b.classList.toggle("on", !!ST.fullOnPaste); }
   { const b=$("#tapPasteTog"); if(b) b.classList.toggle("on", !!ST.tapPaste); }
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
@@ -6895,7 +6895,7 @@ function stateBody(){
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines, tapPaste:!!ST.tapPaste,
-        spPicked:(ST.spPicked||[]), startFull:!!ST.startFull,
+        spPicked:(ST.spPicked||[]), fullOnPaste:!!ST.fullOnPaste,
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         enabledLangs:ST.enabledLangs});
@@ -7124,11 +7124,12 @@ function bind(){
                         : "Tap a sentence to read from it");
     };
   }
-  { const b=$("#startFullTog");
+  { const b=$("#fullPasteTog");
     if(b) b.onclick = ()=>{
-      ST.startFull = !ST.startFull;
+      ST.fullOnPaste = !ST.fullOnPaste;
       refreshToggles(); persist();
-      toast(ST.startFull ? "Opens in full screen" : "Opens normally");
+      toast(ST.fullOnPaste ? "A paste goes full screen"
+                           : "A paste stays in the normal view");
     };
   }
   { const b=$("#bgResumeTog");
@@ -7377,6 +7378,10 @@ function wireCenterTaps(scrollSel, isOffline){
        while this is on, or the gesture would mean three things at once. */
     if(ST.tapPaste){
       e.stopPropagation(); e.preventDefault();
+      /* same rule as the floating P, so the two never disagree */
+      if(ST.fullOnPaste && !document.body.classList.contains("fullread")){
+        reqFull(); setFullread(true);
+      }
       pasteFromClipboard();
       return;
     }
@@ -7509,11 +7514,17 @@ function paintFloat(){
 }
 function floatPress(){
   if(document.body.classList.contains("fullread")){ leaveFull(); return; }
-  /* Ask for full screen HERE, inside the gesture, before anything async.
+  /* The app always opens normal. Full screen is a consequence of PASTING, not
+     of launching, and only when asked for: reading a fresh article is the
+     moment the furniture stops helping, and it is a moment he chose.
+
+     When it is wanted, ask HERE, inside the gesture, before anything async.
      Requested after the clipboard resolves it would be refused, because the
      user activation is spent by then. */
-  reqFull();
-  setFullread(true);
+  if(ST.fullOnPaste){
+    reqFull();
+    setFullread(true);
+  }
   pasteFromClipboard();
 }
 function wireFloat(){
@@ -8111,7 +8122,7 @@ function boot(){
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : [];
-    ST.startFull = !!st.startFull;
+    ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.tapPaste = (st.tapPaste === undefined) ? true : !!st.tapPaste;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
@@ -8180,13 +8191,11 @@ function boot(){
     /* Everything is restored. From here it is safe to write. */
     booted = true;
     bindV2(); refreshToggles(); showHome();
-    /* Start in full screen, if asked. Only OUR furniture can be hidden here:
-       a page cannot demand the browser's own full screen without a gesture to
-       hang it on, and a page that just loaded has none. So in a tab the
-       address bar stays until the first press of the P; installed to the home
-       screen there is no address bar to begin with and this IS full screen.
-       Said plainly in Settings rather than pretended. */
-    if(ST.startFull){ setFullread(true); }
+    /* Deliberately nothing about full screen here. The app always opens in
+       the normal view, whatever the setting says. Full screen belongs to the
+       act of pasting, which is a gesture, which is also the only thing the
+       browser will accept a full screen request from. Doing it at load would
+       have been both unwanted and, in a tab, impossible. */
     refreshGemini();
   }).catch(()=>{ setStatus("Could not reach the server."); });
 }
