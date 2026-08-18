@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.11
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.12
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.11%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.12%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1108,19 +1108,33 @@ def _slug(title):
     s = re.sub(r"-+", "-", s).strip("-")[:40] or "text"
     return "%s-%d" % (s, int(time.time()))
 
-def lib_save(raw):
+def lib_spoken(tid):
+    """The RENDERED text, as the browser built it out of the word spans. Empty
+    for a plain text and for anything saved before v3.12."""
+    try:
+        return open(os.path.join(LIB_DIR, tid, "spoken.txt"),
+                    encoding="utf-8").read()
+    except Exception:
+        return ""
+
+def lib_save(raw, spoken=""):
     """text.txt holds what was PASTED, markers and all. It used to hold the
     cleaned text, which threw the Markdown away at the door and left nothing
-    to format later. Everything derived from it - title, counts, sentences -
-    is still taken from the cleaned form, so nothing downstream sees a hash
-    or an asterisk."""
-    text = clean_text(raw)
+    to format later.
+
+    spoken.txt holds what the VOICE is given. For Markdown that is the string
+    the browser built by walking the rendered text nodes, so the words spoken
+    and the words highlighted come from one place. For plain text it is not
+    written at all and the old cleaner still decides."""
+    text = spoken if spoken.strip() else clean_text(raw)
     title = next((ln.strip()[:48] for ln in text.splitlines() if ln.strip()),
                  "Untitled")
     tid = _slug(title)
     d = os.path.join(LIB_DIR, tid)
     os.makedirs(d, exist_ok=True)
     open(os.path.join(d, "text.txt"), "w", encoding="utf-8").write(raw)
+    if spoken.strip():
+        open(os.path.join(d, "spoken.txt"), "w", encoding="utf-8").write(spoken)
     meta = {"title": title, "created": int(time.time()),
             "chars": len(text), "units": len(split_units(text))}
     json.dump(meta, open(os.path.join(d, "meta.json"), "w", encoding="utf-8"),
@@ -1162,13 +1176,18 @@ def unit_paths(tid, vkey, idx):
 def text_payload(tid):
     """Everything the front end needs to render and play a text.
 
-    `source` is what was pasted; `sentences` is the cleaned text the voice is
-    given. In phase 1 the browser renders the source and speaks the sentences,
-    which is why they travel together. Texts saved by older versions hold
-    already-cleaned text, so their source is simply the plain text and the
-    browser finds no Markdown in it."""
+    `source` is what was pasted. `spoken` is the exact string the voice is
+    given, and `spans` are the character ranges of each sentence INSIDE it.
+    Those offsets are how the page finds which word spans belong to which
+    sentence; matching by text would be guesswork, and matching against the
+    Markdown source would be wrong, because the source is never spoken.
+
+    For a plain text `spoken` is simply the cleaned text, exactly as before.
+    Texts saved before v3.12 have no spoken.txt and fall back to the cleaner,
+    so nothing already on the phone changes meaning."""
     src = lib_text(tid)
-    text = clean_text(src)
+    sp = lib_spoken(tid)
+    text = sp if sp.strip() else clean_text(src)
     units = split_units(text)
     title = ""
     try:
@@ -1178,7 +1197,8 @@ def text_payload(tid):
         title = (text.strip().splitlines() or ["Untitled"])[0][:64]
     sentences = [text[a:b].strip() for a, b in units]
     return {"id": tid, "title": title, "sentences": sentences,
-            "count": len(sentences), "source": src}
+            "count": len(sentences), "source": src,
+            "spoken": text, "spans": [[a, b] for a, b in units]}
 
 
 # ---------- align edge-tts word timings to exact character ranges ----------
@@ -3646,11 +3666,18 @@ def api_state():
 def api_prepare():
     data = request.get_json(force=True, silent=True) or {}
     raw = data.get("text", "")
-    # Judge emptiness on the CLEANED text - a paste of nothing but "---" or
-    # "###" has no words in it - but SAVE the raw, so the markers survive.
-    if not clean_text(raw).strip():
+    # The browser sends `spoken` when it has rendered Markdown: the string it
+    # built by walking the rendered text nodes. It is NOT cleaned again here,
+    # because it has no markers left in it and cleaning would move every
+    # offset out from under the word spans that were numbered against it.
+    spoken = data.get("spoken", "") or ""
+    if not isinstance(spoken, str):
+        spoken = ""
+    spoken = spoken.replace("\r\n", "\n").replace("\r", "\n")
+    text = spoken if spoken.strip() else clean_text(raw)
+    if not text.strip():
         return jsonify({"error": "Paste some text first."}), 400
-    tid = lib_save(raw)
+    tid = lib_save(raw, spoken)
     return jsonify(text_payload(tid))
 
 @app.route("/api/library")
@@ -5008,7 +5035,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.11 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.12 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6180,27 +6207,153 @@ function mdRender(src){
   }catch(e){ return null; }
 }
 
-/* What the current text turned out to be. Set once per text, in renderDoc. */
-const MD = {on:false, html:""};
+/* ---------- phase 2: one source of truth ----------
+   Walk the rendered text nodes, wrap every word in a span, and build the
+   string the voice receives FROM THOSE SPANS. Speech and highlight then share
+   one coordinate system by construction rather than by careful agreement.
+
+   Sentences are split on the RENDERED TEXT. The Markdown source is never
+   split, never sent to a voice, and never seen by the reader.
+
+   The DOM and the spoken string deliberately DIFFER in their whitespace: the
+   page keeps whatever spacing it needs to look right, while the spoken string
+   collapses runs to a single space. That is not a mismatch, because nothing
+   maps by comparing text - every word span carries its own [s,e) offsets into
+   the spoken string, recorded as the string is built. */
+const MD_BLOCKS = new Set(["P","DIV","H1","H2","H3","H4","H5","H6","UL","OL",
+  "LI","BLOCKQUOTE","PRE","HR","TABLE","THEAD","TBODY","TFOOT","TR","TD","TH"]);
+
+function mdBuild(root){
+  const spans = [];
+  let out = "";
+  /* A block boundary becomes a blank line, which is what the sentence
+     splitter and the old cleaner both expect to see between paragraphs. */
+  function gap(){
+    if(!out) return;
+    if(/\n\n$/.test(out)) return;
+    out += /\n$/.test(out) ? "\n" : "\n\n";
+  }
+  function space(){
+    if(out && !/\s$/.test(out)) out += " ";
+  }
+  function wrapText(tn){
+    const text = tn.nodeValue;
+    if(!text) return;
+    if(!/\S/.test(text)){ space(); return; }   /* whitespace between blocks */
+    const frag = tn.ownerDocument.createDocumentFragment();
+    const re = /\S+/g;
+    let m, last = 0;
+    while((m = re.exec(text)) !== null){
+      if(m.index > last){
+        frag.appendChild(tn.ownerDocument.createTextNode(text.slice(last, m.index)));
+        space();
+      }
+      const s = out.length;
+      const w = tn.ownerDocument.createElement("span");
+      w.className = "w";
+      w.textContent = m[0];
+      frag.appendChild(w);
+      out += m[0];
+      spans.push({el: w, s: s, e: out.length});
+      last = m.index + m[0].length;
+    }
+    if(last < text.length){
+      frag.appendChild(tn.ownerDocument.createTextNode(text.slice(last)));
+      space();
+    }
+    tn.parentNode.replaceChild(frag, tn);
+  }
+  function walk(node){
+    /* A snapshot, because wrapText replaces the very node being visited and
+       a live childNodes list would skip half the document. */
+    const kids = Array.prototype.slice.call(node.childNodes);
+    for(let i = 0; i < kids.length; i++){
+      const c = kids[i];
+      if(c.nodeType === 3){ wrapText(c); continue; }
+      if(c.nodeType !== 1) continue;
+      const tag = c.tagName.toUpperCase();
+      if(tag === "BR"){ if(out && !/\n$/.test(out)) out += "\n"; continue; }
+      if(tag === "IMG"){ continue; }        /* an image speaks nothing */
+      const block = MD_BLOCKS.has(tag);
+      if(block) gap();
+      walk(c);
+      if(block) gap();
+    }
+  }
+  walk(root);
+  /* No carriage returns, ever: the server normalises \r\n to \n before it
+     splits, and that would move every offset out from under the spans. */
+  out = out.replace(/\r/g, "");
+  return {spoken: out.trim(), spans: spans, raw: out};
+}
+
+/* Parse once, wrap once. Returns a DETACHED root whose nodes are moved into
+   the page later - moved, not re-parsed, so there is exactly one parse per
+   text no matter how often the view is rebuilt. */
+function mdPrepare(src){
+  if(!src || !looksLikeMarkdown(src)) return null;
+  const html = mdRender(src);
+  if(html === null) return null;
+  const root = document.createElement("div");
+  root.innerHTML = html;
+  const built = mdBuild(root);
+  if(!built.spoken.trim()) return null;
+  /* mdBuild trims the ends; the spans were numbered against the untrimmed
+     string, so shift them back onto the trimmed one. */
+  const lead = built.raw.length - built.raw.replace(/^\s+/, "").length;
+  if(lead){
+    for(let i = 0; i < built.spans.length; i++){
+      built.spans[i].s -= lead; built.spans[i].e -= lead;
+    }
+  }
+  return {root: root, spoken: built.spoken, spans: built.spans};
+}
+
+/* Which word spans belong to sentence [a,b). Offsets, never text matching. */
+function mdSpansIn(spans, a, b){
+  const out = [];
+  for(let i = 0; i < spans.length; i++){
+    if(spans[i].s >= a && spans[i].e <= b) out.push(spans[i]);
+  }
+  return out;
+}
+
+/* What the current text turned out to be, and the spans it was built from.
+   `pending` carries the parse made before /api/prepare was called across to
+   renderDoc, so the nodes are MOVED into the page rather than parsed twice. */
+const MD = {on:false, root:null, spans:[], spoken:"", pending:null, mapped:false};
 
 /* ---------- rendering the document ---------- */
 function renderDoc(){
   const doc = $("#doc"); doc.innerHTML = ""; wordCache.clear();
-  /* PHASE 1. A Markdown source is parsed ONCE, here, and the view shows the
-     result formatted. It is never re-parsed while reading: highlighting is a
-     class on a span, and re-rendering would lose the scroll position and move
-     every offset underneath it.
+  /* PHASE 2. The Markdown was parsed ONCE, before /api/prepare was called,
+     and its words were wrapped in spans then. Those very nodes are MOVED into
+     the page here - not parsed again, not re-serialised - so there is exactly
+     one parse per text however often the view is rebuilt.
 
-     The reading path below is untouched. Plain text takes the same road it
-     always has - one .sent span per sentence - and a source that is not
-     Markdown never reaches the parser at all. */
-  MD.on = false; MD.html = "";
-  if(ST.source && looksLikeMarkdown(ST.source)){
-    const html = mdRender(ST.source);
-    if(html){ MD.on = true; MD.html = html; doc.innerHTML = html; }
+     Reading never re-renders. Highlighting is a class on a span.
+
+     The plain path below is untouched: a text that is not Markdown takes the
+     same road it always has, one .sent span per sentence. */
+  let pre = MD.pending; MD.pending = null;
+  MD.on = false; MD.root = null; MD.spans = []; MD.spoken = ""; MD.mapped = false;
+  /* Opened from the Archive there is no pending parse, so build one now from
+     the source the payload carried. */
+  if(!pre && ST.source && looksLikeMarkdown(ST.source)) pre = mdPrepare(ST.source);
+  if(pre){
+    MD.on = true; MD.root = pre.root; MD.spans = pre.spans; MD.spoken = pre.spoken;
+    /* The spans were numbered against OUR string. The sentence offsets came
+       from the server, numbered against ITS string. If the two are not the
+       same string the offsets mean nothing, so the text is still shown
+       formatted but nothing is mapped, rather than mapped wrongly. That can
+       only happen if the parser changed under a text already in the library. */
+    MD.mapped = (typeof ST.spoken === "string" && ST.spoken === pre.spoken);
+    while(pre.root.firstChild) doc.appendChild(pre.root.firstChild);
+    doc.classList.add("md");
+    prefetch(0); prefetch(1); prefetch(2);
+    return;
   }
-  doc.classList.toggle("md", MD.on);
-  if(MD.on){ prefetch(0); prefetch(1); prefetch(2); return; }
+  doc.classList.remove("md");
   ST.sentences.forEach((s,i)=>{
     const span = document.createElement("span");
     span.className = "sent"; span.dataset.i = i;
@@ -6967,6 +7120,16 @@ function doneReset(){
 }
 
 /* ---------- open / prepare ---------- */
+/* One place decides what /api/prepare is told. If the text is Markdown it is
+   parsed and its words wrapped FIRST, and the string built from those spans
+   travels with the request as `spoken`. The server splits THAT into sentences,
+   so the voice and the highlight can never be reading two different texts.
+   The parse is stashed for renderDoc, which moves the nodes into the page. */
+function prepareBody(text){
+  const pre = mdPrepare(text);
+  MD.pending = pre;
+  return JSON.stringify(pre ? {text: text, spoken: pre.spoken} : {text: text});
+}
 function openPayload(p, autoplay){
   stopOnline(); stopOffline();
   ST.tid = p.id; ST.title = p.title || "Untitled";
@@ -6974,6 +7137,10 @@ function openPayload(p, autoplay){
   /* What was pasted, markers and all. Older texts were saved already cleaned,
      so their source is plain and the detector will say so. */
   ST.source = p.source || "";
+  /* The exact string the voice is given, and where each sentence sits inside
+     it. Speech and highlight share these coordinates. */
+  ST.spoken = (typeof p.spoken === "string") ? p.spoken : "";
+  ST.spans  = Array.isArray(p.spans) ? p.spans : [];
   handedOff = false; clearWarm(); boundsCache.clear(); silCache.clear();
   $("#readerTitle").textContent = ST.title;
   renderDoc(); markSession(); updateCounter(); showReader();
@@ -6987,7 +7154,7 @@ function readPasted(){
   if(!text.trim()){ toast("Paste some text first."); return; }
   setStatus("Preparing...");
   api("/api/prepare", {method:"POST", headers:{"Content-Type":"application/json"},
-       body: JSON.stringify({text})})
+       body: prepareBody(text)})
     .then(r=>r.json().then(j=>({ok:r.ok,j})))
     .then(({ok,j})=>{
       if(!ok){ toast(j.error||"Could not prepare."); return; }
@@ -7737,7 +7904,7 @@ function readTextNow(text){
   if(!text || !text.trim()){ toast("Nothing to read."); return; }
   setStatus("Preparing...");
   api("/api/prepare", {method:"POST", headers:{"Content-Type":"application/json"},
-       body: JSON.stringify({text})})
+       body: prepareBody(text)})
     .then(r=>r.json().then(j=>({ok:r.ok,j})))
     .then(({ok,j})=>{
       if(!ok){ toast(j.error||"Could not prepare."); return; }
@@ -7896,7 +8063,7 @@ function makeOffline(){
   btn.disabled=true; btn.textContent="Working...";
   toast("Saving to Offline in "+vn+"...");
   api("/api/prepare",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({text})})
+      body:(function(){ const b = prepareBody(text); MD.pending = null; return b; })()})
     .then(r=>r.json())
     .then(p=> api("/api/export",{method:"POST",
         headers:{"Content-Type":"application/json"},

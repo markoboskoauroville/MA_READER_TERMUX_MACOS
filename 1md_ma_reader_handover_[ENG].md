@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 18.8.2026, v3.11, everything in it verified. This file is rewritten on
+State of the app as of 18.8.2026, v3.12, everything in it verified. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -10,9 +10,15 @@ a bug.
 
 ## Before anything else
 
-Read 1md_working_rules_[ENG].md. Three progressing tests before shipping, real
+Read 1md_working_rules_[ENG].md. FOUR progressing tests before shipping, real
 keys only and shredded after, one spoon at a time, and say what was not
 tested. Those rules bind whoever picks this up next.
+
+The fourth test was added 18.8.2026 and is THE UPGRADE: install the previous
+version for real, use it, leave its server running, then install the new one
+on top and prove the library, the settings, the key files and the running
+process all end up where they should. It exists because v3.11 changed what
+text.txt MEANS, and a change like that cannot be proved on a clean install.
 
 ## What it is
 
@@ -197,10 +203,11 @@ TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
 
-## Markdown, phase 1 of 4: it renders
+## Markdown, phases 1 and 2 of 4: it renders, and it is one text
 
-The reader shows pasted Markdown FORMATTED. Phase 1 of four; phases 2, 3 and 4
-are not built yet and the gap is named at the bottom of this section.
+The reader shows pasted Markdown FORMATTED, and the words spoken are the same
+words that are wrapped in spans. Phases 1 and 2 of four; 3 and 4 are not built
+yet and the gap is named at the bottom of this section.
 
 WHAT CHANGED ON THE SERVER. text.txt used to hold the CLEANED text, because
 api_prepare cleaned the paste before saving it. That threw the Markdown away
@@ -260,12 +267,74 @@ weight rather than ink, because the sentence highlight is a solid yellow block
 and coloured text underneath it would have to fight it. Links are blue, the
 one colour the highlight never uses.
 
-### What phase 1 does NOT do
+### Proved across the upgrade, 18.8.2026
+
+Test 4 installs v3.10 for real, makes three texts through its API, changes
+seven settings, plants the key files, leaves the server RUNNING, and then
+installs v3.11 on top. 53 checks, all passing:
+
+    the running v3.10 server is seen and stopped, not left serving memory
+    all seven settings keep their VALUES, not their defaults
+    all five kept files come back, key files still 0600
+    all three texts written under the OLD rule still open, with byte-identical
+      sentences, and now carry a source
+    none of them is mistaken for Markdown, so an old text cannot suddenly
+      start rendering as headings because the cleaner left a dash list behind
+    a second install straight after changes nothing and leaves no .new files
+
+The key files in that test are OBVIOUS FAKES and prove only that the installer
+carries them across a wipe. Real-key testing is rule 2 and was done separately
+against the live Speechify API.
+
+## Phase 2: one source of truth
+
+THE VOICE AND THE HIGHLIGHT READ ONE STRING, by construction rather than by
+careful agreement.
+
+    the browser parses the Markdown ONCE, before /api/prepare is called
+    it walks the rendered text nodes and wraps every word in a span
+    it builds the spoken string FROM THOSE SPANS, recording each span's
+      [s,e) offsets into it as it goes
+    that string travels with the request as `spoken`
+    the server splits THAT, never the Markdown source, and returns the
+      sentences together with their character ranges inside it
+    the page finds a sentence's words by offset, never by matching text
+
+The parsed nodes are then MOVED into the page, not re-parsed and not
+re-serialised, so there is exactly one parse per text however often the view
+is rebuilt.
+
+THE DOM AND THE SPOKEN STRING DIFFER IN WHITESPACE ON PURPOSE. The page keeps
+whatever spacing it needs to look right; the spoken string collapses runs to a
+single space and puts a blank line between blocks. That is not a mismatch to
+be fixed, because nothing maps by comparing text.
+
+A WORD CAN BE SPLIT ACROSS ELEMENTS. "<code>x</code>." is one run of non-space
+in the spoken string but two spans. Spans are therefore sub-word pieces with
+exact offsets, and anything that wants whole words groups them by the runs of
+the spoken string.
+
+WHERE IT IS STORED. spoken.txt, beside text.txt in the library folder. text.txt
+is what was pasted; spoken.txt is what the voice was given. A plain text never
+writes one and the old cleaner still decides, exactly as before.
+
+THE INVARIANT, AND THE ONLY HONEST FALLBACK. The page maps ONLY when its own
+spoken string is identical to the server's. If a text has no spoken.txt - saved
+before v3.12, or the parser changed underneath it - the server falls back to
+the cleaner, and the two strings may differ. Then the text is still shown
+formatted and simply NOT mapped. Mapping on offsets taken from a different
+string would light up the wrong words, which is worse than lighting up none.
+
+Proved against the live Speechify API: a Markdown document was billed 254
+characters, which is exactly the length of the string built from the spans,
+and no hash, asterisk, backtick, pipe or URL was ever sent.
+
+### What phases 1 and 2 do NOT do
 
 A Markdown text renders formatted and READS ALOUD CORRECTLY, but nothing
-lights up while it reads. The highlight lives on .sent spans, and rendered
-Markdown has none. highlight() and ensureWordSpans() find no element and
-return quietly, so nothing crashes and the audio is untouched.
+lights up while it reads. The word spans are now there and the sentences know
+which spans they own; what has not happened yet is pointing the existing
+sentence and word highlight at them. That is phase 3.
 
 Plain text is completely unaffected: same .sent spans, same highlight, same
 sentences, byte for byte.
@@ -275,10 +344,12 @@ Also still owed, and belonging to the later phases:
     EDIT mode on a Markdown text edits the RENDERED TEXT, not the Markdown
       source, so committing an edit flattens the formatting. Phase 3.
     tap a sentence to read from there does nothing in a Markdown text,
-      because there are no sentence spans to tap. Phase 3.
-    code blocks, tables and link URLs are cleaned by the OLD server-side
-      cleaner, unchanged from v3.10, so a table still reads as its cells run
-      together and a fenced block is still spoken. Phase 4.
+      because there are no .sent spans to tap. Phase 3.
+    a heading glues to the paragraph after it, because the sentence splitter
+      only breaks on . ! ? and a heading has none. Phase 4.
+    a table reads as its cells run together, and a fenced code block is read
+      aloud in full. Phase 4.
+    an image speaks nothing at all, not even its alt text. Phase 4.
 
 The visible version is v3.N and N goes up on every push, however small, so a
 change can be pointed at and named. Run bump.py before pushing; it changes all

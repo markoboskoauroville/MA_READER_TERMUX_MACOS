@@ -1,15 +1,16 @@
 # Working Rules
 
-How work is done in this repo, and in any repo of Marko's. Set 17.8.2026.
+How work is done in this repo, and in any repo of Marko's. Set 17.8.2026,
+fourth test added 18.8.2026.
 These are not suggestions. If a rule and a deadline disagree, the rule wins.
 
 ---
 
-## 1. Three tests before shipping
+## 1. Four tests before shipping
 
-Every feature is tested THREE times before it is delivered.
+Every feature is tested FOUR times before it is delivered.
 
-The three must PROGRESS. Running the same test three times proves nothing
+The four must PROGRESS. Running the same test four times proves nothing
 except that the computer is deterministic, which was never in doubt.
 
     TEST 1    THE MECHANISM, ALONE
@@ -28,14 +29,42 @@ except that the computer is deterministic, which was never in doubt.
               user doing it twice, the value out of range, the file missing,
               the network hanging and never answering at all.
 
-Say what each of the three was and what it showed. If a test fails, fix it and
-run ALL THREE again, not just the one that failed.
+    TEST 4    THE UPGRADE, FROM THE VERSION BEFORE
+              Nobody installs this app fresh. Baba has a phone with the
+              PREVIOUS version on it, a library of texts, a settings file, key
+              files, caches, and quite possibly a server still running. So the
+              test is not "does it install", it is "does it install OVER what
+              is already there and leave every one of those intact".
 
-Three is the number.
+              Install the previous version FOR REAL. Use it: make texts, change
+              settings, let it write its files. Leave the server running. Then
+              install the new version on top and prove:
 
-### Why three, learned the hard way
+                  every old text still opens and still reads
+                  every setting survives, with its VALUE, not its default
+                  key files survive the wipe and come back, still 0600
+                  a file written by the OLD code is still understood by the NEW
+                  a running server is stopped rather than left serving memory
+                  every command is replaced, and no half-written .new is left
+                  doing it a second time changes nothing and breaks nothing
 
-Every real bug shipped from this repo would have been caught by test 3:
+              A feature that works perfectly on a clean install and loses his
+              library is not a feature, it is an accident with a version
+              number. Anything that changes the MEANING of a file already on
+              his phone must be proved here or it is not done.
+
+              Start the old server the way the LAUNCHER starts it, absolute
+              path and all. Started any other way the installer cannot see it,
+              and the test proves nothing about the phone.
+
+Say what each of the four was and what it showed. If a test fails, fix it and
+run ALL FOUR again, not just the one that failed.
+
+Four is the number.
+
+### Why these four, learned the hard way
+
+Every real bug shipped from this repo would have been caught by test 3 or 4:
 
     the picker stuck at 1 page       a cache written by older code was still
                                      readable by newer code. Caught by
