@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.12
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.13
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.12%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.13%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -4347,6 +4347,69 @@ body.wordhl .sent.paused .w.now{
   text-align:left}
 .doc.md th{font-weight:700}
 
+/* ---------- the highlight, over the formatting ----------
+   A sentence is a RANGE of spans, not one box, so the band is painted on the
+   words AND on the spaces between them. Without the gaps lit the sentence
+   would read as a row of separate yellow blocks with pale stripes between. */
+.doc.md .w,.doc.md .g{padding:1px 0; border-radius:0;
+  transition:background .12s,color .12s}
+.doc.md .w.lit,.doc.md .g.lit{background:var(--sent); color:var(--sent-fg)}
+.doc.md .w.litp,.doc.md .g.litp{background:var(--sent-soft); color:var(--page-text)}
+/* Round only the two ends of the band, which are the first and last thing lit
+   on each line, so it reads as one ribbon rather than many tiles. */
+.doc.md .lit:not(.g) + .g.lit{border-radius:0}
+.doc.md .w.lit:first-child,.doc.md .w.litp:first-child{
+  border-top-left-radius:5px; border-bottom-left-radius:5px; padding-left:2px}
+.doc.md .w.lit:last-child,.doc.md .w.litp:last-child{
+  border-top-right-radius:5px; border-bottom-right-radius:5px; padding-right:2px}
+/* the single word being spoken, same red as everywhere else */
+body.wordhl .doc.md .w.lit.now,
+body.wordhl .doc.md .w.litp.now{
+  background:var(--wordbg); color:var(--wordfg);
+  padding:0 2px; margin:0 -2px;
+  -webkit-box-decoration-break:clone; box-decoration-break:clone}
+/* THE COLOURS MUST NOT FIGHT THE FORMATTING. A link is blue and the band is
+   yellow, and blue on yellow is unreadable, so a lit word takes the band's
+   ink whatever its element wanted. The underline is moved onto the word span
+   itself so it follows that colour instead of staying blue underneath. */
+.doc.md a{text-decoration:none}
+.doc.md a .w{text-decoration:underline; text-underline-offset:.15em}
+/* An inline code chip has its own background and border; under the band they
+   would box the highlight in. :has is a nicety - where it is missing the
+   chip simply keeps its frame, which is untidy but perfectly readable. */
+.doc.md code:has(.w.lit),.doc.md code:has(.w.litp){
+  background:none; border-color:transparent}
+.doc.md pre:has(.w.lit),.doc.md pre:has(.w.litp){border-color:var(--sent)}
+/* Focus mode dims what is not being read, the same as it does for plain text */
+.focus .doc.md .w:not(.lit):not(.litp),
+.focus .doc.md .g:not(.lit):not(.litp){opacity:.45}
+
+/* ---------- TEXT mode: plain white, no formatting at all ----------
+   Not "formatting with the colours off": every heading back to body size,
+   every chip, border, rule and underline gone, one ink. */
+body.mode-text .doc.md,
+body.mode-text .doc.md *{background:none !important; color:#fff !important;
+  border-color:transparent !important; box-shadow:none !important;
+  font-size:inherit !important; font-weight:400 !important;
+  font-style:normal !important; text-decoration:none !important;
+  opacity:1 !important}
+body.mode-text .doc.md hr{border-top:1px solid #444 !important}
+body.mode-text .doc.md img{display:none}
+
+/* ---------- EDIT mode edits the MARKDOWN SOURCE ----------
+   Not the rendered HTML. Editing the rendering would silently throw the
+   formatting away the moment it was committed, because what came back out of
+   the page would be flat text with the markers already consumed. */
+.md-edit{display:none; width:100%; min-height:60vh; box-sizing:border-box;
+  background:var(--page); color:var(--page-text); border:1px solid var(--line);
+  border-radius:8px; padding:10px 12px; resize:none; outline:none;
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:calc(var(--read) * .8); line-height:1.55;
+  caret-color:var(--tune); -webkit-text-size-adjust:100%}
+body.mode-edit .md-edit.on{display:block}
+body.mode-edit .md-edit.on ~ .doc,
+body.mode-edit .doc.mdhidden{display:none}
+
 /* ---------- transport / controls ---------- */
 .controls{border-top:1px solid var(--line); background:var(--bg2);
   padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
@@ -4958,6 +5021,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="reader-scroll" id="readerScroll">
       <p class="reader-title" id="readerTitle"></p>
       <div class="doc" id="doc"></div>
+      <!-- EDIT mode for a Markdown text edits the SOURCE, markers and all -->
+      <textarea class="md-edit" id="mdEdit" spellcheck="false"
+                autocapitalize="off" autocorrect="off"></textarea>
     </div>
     <div class="controls off-controls">
       <div class="progress">
@@ -5035,7 +5101,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.12 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.13 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6224,7 +6290,7 @@ const MD_BLOCKS = new Set(["P","DIV","H1","H2","H3","H4","H5","H6","UL","OL",
   "LI","BLOCKQUOTE","PRE","HR","TABLE","THEAD","TBODY","TFOOT","TR","TD","TH"]);
 
 function mdBuild(root){
-  const spans = [];
+  const spans = [], gaps = [];
   let out = "";
   /* A block boundary becomes a blank line, which is what the sentence
      splitter and the old cleaner both expect to see between paragraphs. */
@@ -6233,23 +6299,56 @@ function mdBuild(root){
     if(/\n\n$/.test(out)) return;
     out += /\n$/.test(out) ? "\n" : "\n\n";
   }
+  /* Returns true when a space was actually added, which is how the caller
+     knows whether this whitespace is worth a span of its own. */
   function space(){
-    if(out && !/\s$/.test(out)) out += " ";
+    if(out && !/\s$/.test(out)){ out += " "; return true; }
+    return false;
+  }
+  /* Whitespace INSIDE a sentence gets a span too, so the sentence highlight
+     is a continuous band rather than a row of separately lit words with pale
+     gaps between them. Gaps are kept apart from the word spans: the word
+     spans are the contract phase 2 established and nothing else may enter
+     that list. Structural whitespace BETWEEN blocks never becomes a gap,
+     because the block boundary has already ended the line. */
+  function gapSpan(tn, s){
+    const g = tn.ownerDocument.createElement("span");
+    g.className = "g";
+    g.textContent = tn.nodeValue;
+    gaps.push({el: g, s: s, e: out.length});
+    return g;
   }
   function wrapText(tn){
     const text = tn.nodeValue;
     if(!text) return;
-    if(!/\S/.test(text)){ space(); return; }   /* whitespace between blocks */
-    const frag = tn.ownerDocument.createDocumentFragment();
+    const doc = tn.ownerDocument;
+    if(!/\S/.test(text)){
+      const s = out.length;
+      if(space()){
+        const g = gapSpan(tn, s);
+        tn.parentNode.replaceChild(g, tn);
+      }
+      return;
+    }
+    const frag = doc.createDocumentFragment();
     const re = /\S+/g;
     let m, last = 0;
-    while((m = re.exec(text)) !== null){
-      if(m.index > last){
-        frag.appendChild(tn.ownerDocument.createTextNode(text.slice(last, m.index)));
-        space();
-      }
+    function emitGap(a, b){
+      const piece = doc.createTextNode(text.slice(a, b));
       const s = out.length;
-      const w = tn.ownerDocument.createElement("span");
+      if(space()){
+        const g = doc.createElement("span");
+        g.className = "g"; g.textContent = text.slice(a, b);
+        gaps.push({el: g, s: s, e: out.length});
+        frag.appendChild(g);
+      }else{
+        frag.appendChild(piece);
+      }
+    }
+    while((m = re.exec(text)) !== null){
+      if(m.index > last) emitGap(last, m.index);
+      const s = out.length;
+      const w = doc.createElement("span");
       w.className = "w";
       w.textContent = m[0];
       frag.appendChild(w);
@@ -6257,10 +6356,7 @@ function mdBuild(root){
       spans.push({el: w, s: s, e: out.length});
       last = m.index + m[0].length;
     }
-    if(last < text.length){
-      frag.appendChild(tn.ownerDocument.createTextNode(text.slice(last)));
-      space();
-    }
+    if(last < text.length) emitGap(last, text.length);
     tn.parentNode.replaceChild(frag, tn);
   }
   function walk(node){
@@ -6284,7 +6380,7 @@ function mdBuild(root){
   /* No carriage returns, ever: the server normalises \r\n to \n before it
      splits, and that would move every offset out from under the spans. */
   out = out.replace(/\r/g, "");
-  return {spoken: out.trim(), spans: spans, raw: out};
+  return {spoken: out.trim(), spans: spans, gaps: gaps, raw: out};
 }
 
 /* Parse once, wrap once. Returns a DETACHED root whose nodes are moved into
@@ -6305,8 +6401,12 @@ function mdPrepare(src){
     for(let i = 0; i < built.spans.length; i++){
       built.spans[i].s -= lead; built.spans[i].e -= lead;
     }
+    for(let i = 0; i < built.gaps.length; i++){
+      built.gaps[i].s -= lead; built.gaps[i].e -= lead;
+    }
   }
-  return {root: root, spoken: built.spoken, spans: built.spans};
+  return {root: root, spoken: built.spoken, spans: built.spans,
+          gaps: built.gaps};
 }
 
 /* Which word spans belong to sentence [a,b). Offsets, never text matching. */
@@ -6318,10 +6418,130 @@ function mdSpansIn(spans, a, b){
   return out;
 }
 
+/* ---------- phase 3: the highlight, over the formatting ----------
+   Nothing here re-renders anything. The sentence being read and the word
+   being spoken are both a CLASS on spans that already exist, which is exactly
+   what the app has always done for plain text; all that changes is that a
+   sentence is now a RANGE of spans rather than one element wrapping them. */
+
+/* Everything currently lit, so it can be put out without searching the page.
+   Holding the elements is much cheaper than a querySelectorAll across a long
+   document on every sentence change. */
+const MDLIT = {band: [], now: []};
+
+function mdUnlight(){
+  for(let i = 0; i < MDLIT.band.length; i++)
+    MDLIT.band[i].classList.remove("lit", "litp");
+  for(let i = 0; i < MDLIT.now.length; i++)
+    MDLIT.now[i].classList.remove("now");
+  MDLIT.band = []; MDLIT.now = [];
+}
+
+/* The band across sentence i: its words AND the spaces between them, so the
+   highlight is continuous rather than striped. */
+function mdBand(i){
+  const r = (ST.spans || [])[i];
+  if(!r) return [];
+  const out = mdSpansIn(MD.spans, r[0], r[1]).map(o => o.el);
+  const g = mdSpansIn(MD.gaps || [], r[0], r[1]).map(o => o.el);
+  return out.concat(g);
+}
+
+function mdHighlight(i, paused){
+  mdUnlight();
+  const band = mdBand(i);
+  if(!band.length) return;
+  const cls = paused ? "litp" : "lit";
+  for(let k = 0; k < band.length; k++) band[k].classList.add(cls);
+  MDLIT.band = band;
+  /* Scroll to the FIRST word of the sentence. The band is not one element, so
+     there is no single box to bring into view. */
+  const first = band[0];
+  const sc = $("#readerScroll");
+  if(sc && first){
+    const r2 = first.getBoundingClientRect(), pr = sc.getBoundingClientRect();
+    if(r2.top < pr.top + 40 || r2.bottom > pr.bottom - 90){
+      first.scrollIntoView({block: "center", behavior: "smooth"});
+    }
+  }
+}
+
+/* The word timings arrive as character offsets into ST.sentences[i], which is
+   the sentence STRIPPED. The spans are numbered against the whole spoken
+   string. So a token at offset s inside sentence i sits at range[0] + lead + s
+   in the spoken string, where lead is the whitespace strip() removed from the
+   front. Getting that shift wrong moves every word by a word. */
+function mdWordSpans(i){
+  if(wordCache.has(i)) return wordCache.get(i);
+  const toks = boundsCache.get(i);
+  if(!toks || !toks.length) return [];
+  const r = (ST.spans || [])[i];
+  if(!r || typeof ST.spoken !== "string") return [];
+  const raw = ST.spoken.slice(r[0], r[1]);
+  const lead = raw.length - raw.replace(/^\s+/, "").length;
+  const out = [];
+  for(let k = 0; k < toks.length; k++){
+    const tok = toks[k];
+    const a = r[0] + lead + tok.s, b = r[0] + lead + tok.e;
+    /* A token can cover MORE THAN ONE span: "<code>x</code>." is one run of
+       non-space in the spoken string but two spans. They light together.
+
+       A token can also cover NO span at all. Speechify's speech marks are its
+       own chunks, not word runs: a real sentence here produced a token of
+       "Two\n" and then a token of "\n" on its own. The empty one is KEPT,
+       with no elements, so this array stays one for one with the server's
+       timings. Dropping it would slide every later index up by one and the
+       highlight would run a word ahead of the voice for the rest of the
+       sentence. With it kept, the pause simply lights nothing, which is what
+       is actually happening. */
+    const els = [];
+    for(let j = 0; j < MD.spans.length; j++){
+      const sp = MD.spans[j];
+      if(sp.s < b && sp.e > a) els.push(sp.el);
+    }
+    out.push({els: els, t: tok.t, d: (tok.d != null ? tok.d : tok.t)});
+  }
+  wordCache.set(i, out);
+  return out;
+}
+
+function mdHighlightWordAt(i, mediaTime){
+  const spans = mdWordSpans(i);
+  if(!spans.length) return;
+  const t = mediaTime + WORD_LEAD + curOffsetSec();
+  let lo = 0, hi = spans.length - 1, k = -1;
+  while(lo <= hi){
+    const m = (lo + hi) >> 1;
+    if(spans[m].t <= t){ k = m; lo = m + 1; } else { hi = m - 1; }
+  }
+  if(k === spans.length - 1 && spans[k].d != null && t > spans[k].d + 0.12) k = -1;
+  if(k === CLK.lastWord) return;
+  CLK.lastWord = k;
+  for(let j = 0; j < MDLIT.now.length; j++) MDLIT.now[j].classList.remove("now");
+  MDLIT.now = (k >= 0) ? spans[k].els.slice() : [];
+  for(let j = 0; j < MDLIT.now.length; j++) MDLIT.now[j].classList.add("now");
+}
+
+/* Tapping a word reads from that sentence, which is what tapping a sentence
+   has always done in plain text. Without this a Markdown text cannot be
+   started from the middle at all. */
+function mdSentenceAt(el){
+  const r = ST.spans || [];
+  let hit = null;
+  for(let j = 0; j < MD.spans.length; j++) if(MD.spans[j].el === el) hit = MD.spans[j];
+  if(!hit) for(let j = 0; j < (MD.gaps||[]).length; j++)
+    if(MD.gaps[j].el === el) hit = MD.gaps[j];
+  if(!hit) return -1;
+  for(let i = 0; i < r.length; i++)
+    if(hit.s >= r[i][0] && hit.e <= r[i][1]) return i;
+  return -1;
+}
+
 /* What the current text turned out to be, and the spans it was built from.
    `pending` carries the parse made before /api/prepare was called across to
    renderDoc, so the nodes are MOVED into the page rather than parsed twice. */
-const MD = {on:false, root:null, spans:[], spoken:"", pending:null, mapped:false};
+const MD = {on:false, root:null, spans:[], gaps:[], spoken:"",
+            pending:null, mapped:false};
 
 /* ---------- rendering the document ---------- */
 function renderDoc(){
@@ -6336,12 +6556,19 @@ function renderDoc(){
      The plain path below is untouched: a text that is not Markdown takes the
      same road it always has, one .sent span per sentence. */
   let pre = MD.pending; MD.pending = null;
-  MD.on = false; MD.root = null; MD.spans = []; MD.spoken = ""; MD.mapped = false;
+  MD.on = false; MD.root = null; MD.spans = []; MD.gaps = [];
+  MD.spoken = ""; MD.mapped = false;
+  try{ mdUnlight(); }catch(e){}
+  /* A source editor left holding the PREVIOUS text would commit that text
+     over this one the moment EDIT was left. */
+  const _ta = $("#mdEdit"); if(_ta){ _ta.value = ""; _ta.classList.remove("on"); }
+  doc.classList.remove("mdhidden");
   /* Opened from the Archive there is no pending parse, so build one now from
      the source the payload carried. */
   if(!pre && ST.source && looksLikeMarkdown(ST.source)) pre = mdPrepare(ST.source);
   if(pre){
-    MD.on = true; MD.root = pre.root; MD.spans = pre.spans; MD.spoken = pre.spoken;
+    MD.on = true; MD.root = pre.root; MD.spans = pre.spans;
+    MD.gaps = pre.gaps || []; MD.spoken = pre.spoken;
     /* The spans were numbered against OUR string. The sentence offsets came
        from the server, numbered against ITS string. If the two are not the
        same string the offsets mean nothing, so the text is still shown
@@ -6426,6 +6653,7 @@ function swipeGo(dx, onPrev, onNext){
 }
 
 function ensureWordSpans(i){
+  if(MD.mapped) return mdWordSpans(i);
   if(wordCache.has(i)) return wordCache.get(i);
   const el = sentEl(i); if(!el) return [];
   const tokens = boundsCache.get(i);
@@ -6443,6 +6671,7 @@ function ensureWordSpans(i){
   wordCache.set(i, spans); return spans;
 }
 function highlightWordAt(i, mediaTime){
+  if(MD.mapped) return mdHighlightWordAt(i, mediaTime);
   const spans = wordCache.get(i) || ensureWordSpans(i);
   if(!spans || !spans.length) return;
   /* `mediaTime` is the predicted media-clock time (seconds). Add the small
@@ -6466,12 +6695,19 @@ function highlightWordAt(i, mediaTime){
 }
 function clearWords(i){
   CLK.lastWord = -2;
+  if(MD.mapped){
+    for(let j = 0; j < MDLIT.now.length; j++) MDLIT.now[j].classList.remove("now");
+    MDLIT.now = []; return;
+  }
   const sp = wordCache.get(i); if(sp) sp.forEach(o=>o.el.classList.remove("now"));
 }
 
 /* ---------- highlight ---------- */
 function highlight(i, paused){
   CLK.lastWord = -2;
+  /* A Markdown text has no .sent elements: a sentence is a RANGE of word
+     spans. Same idea, same classes, different container. */
+  if(MD.mapped){ mdHighlight(i, paused); updateCounter(); return; }
   document.querySelectorAll("#doc .sent.active, #doc .sent.paused")
     .forEach(e=>e.classList.remove("active","paused"));
   const el = sentEl(i); if(!el) return;
@@ -7718,10 +7954,22 @@ function setMode(m){
 }
 function applyEditable(){
   const on = (ST.mode === "edit");
+  const box = $("#mdEdit"), doc = $("#doc");
+  /* A Markdown text is edited AS MARKDOWN. Making the rendered HTML
+     contentEditable would let a heading be typed into and then, on commit,
+     read back as flat text with every marker already consumed - the
+     formatting would quietly disappear the first time anything was fixed. */
+  const mdEdit = on && MD.on;
+  if(box){
+    box.classList.toggle("on", mdEdit);
+    if(mdEdit && box.value !== ST.source) box.value = ST.source || "";
+  }
+  if(doc) doc.classList.toggle("mdhidden", mdEdit);
   ["#doc", "#offDoc"].forEach(sel => {
     const el = $(sel); if(!el) return;
     try{
-      el.contentEditable = on ? "true" : "false";
+      /* Only ever the PLAIN document becomes editable in place. */
+      el.contentEditable = (on && !(sel === "#doc" && MD.on)) ? "true" : "false";
       el.spellcheck = false;
     }catch(e){}
   });
@@ -7729,6 +7977,18 @@ function applyEditable(){
 /* Leaving EDIT keeps what was typed: the text is read back out of the page,
    saved as a new text, and re-split into sentences so it can be spoken. */
 function commitEdit(){
+  /* Markdown: what was edited is the SOURCE, so that is what is committed,
+     and it goes back through the same road a paste takes - parsed, wrapped,
+     re-split - so the formatting and the highlight both come back. */
+  if(MD.on){
+    const ta = $("#mdEdit"); if(!ta) return;
+    const t = (ta.value || "").replace(/\u00a0/g, " ");
+    if(!t.trim()) return;
+    if(t === (ST.source || "")) return;    /* nothing was actually changed */
+    const box = $("#pasteBox"); if(box) box.value = t;
+    readTextNow(t);
+    return;
+  }
   const el = $("#doc"); if(!el) return;
   const t = (el.innerText || "").replace(/\u00a0/g, " ").trim();
   if(!t) return;
@@ -7881,8 +8141,17 @@ function wireCenterTaps(scrollSel, isOffline){
       clearTimeout(tapT); tapT=null;
       if(inZ){ toggleImmersive(isOffline); return; }
     }
-    const sent = (e.target && e.target.closest) ? e.target.closest(".sent") : null;
-    const si = sent ? parseInt(sent.dataset.i, 10) : -1;
+    /* In a Markdown text there is no .sent to close on, so the sentence is
+       found from the word span that was actually touched. */
+    let si = -1;
+    if(!isOffline && MD.mapped){
+      const wsp = (e.target && e.target.closest)
+                    ? e.target.closest("#doc .w, #doc .g") : null;
+      if(wsp) si = mdSentenceAt(wsp);
+    }else{
+      const sent = (e.target && e.target.closest) ? e.target.closest(".sent") : null;
+      si = sent ? parseInt(sent.dataset.i, 10) : -1;
+    }
     tapT=setTimeout(()=>{
       tapT=null;
       if(full || si < 0 || isNaN(si)){

@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 18.8.2026, v3.12, everything in it verified. This file is rewritten on
+State of the app as of 18.8.2026, v3.13, everything in it verified. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -203,11 +203,12 @@ TRAP, twice now: am and cmd print their failures and still exit zero. Read the
 output, not just the exit code.
 
 
-## Markdown, phases 1 and 2 of 4: it renders, and it is one text
+## Markdown, phases 1 to 3 of 4: it renders, it is one text, and it lights up
 
-The reader shows pasted Markdown FORMATTED, and the words spoken are the same
-words that are wrapped in spans. Phases 1 and 2 of four; 3 and 4 are not built
-yet and the gap is named at the bottom of this section.
+The reader shows pasted Markdown FORMATTED, the words spoken are the same
+words that are wrapped in spans, and the sentence and the word light up as it
+reads. Phases 1 to 3 of four; phase 4, the ugly cases, is not built yet and
+the gap is named at the bottom of this section.
 
 WHAT CHANGED ON THE SERVER. text.txt used to hold the CLEANED text, because
 api_prepare cleaned the paste before saving it. That threw the Markdown away
@@ -329,22 +330,75 @@ Proved against the live Speechify API: a Markdown document was billed 254
 characters, which is exactly the length of the string built from the spans,
 and no hash, asterisk, backtick, pipe or URL was ever sent.
 
-### What phases 1 and 2 do NOT do
+## Phase 3: the highlight, over the formatting
 
-A Markdown text renders formatted and READS ALOUD CORRECTLY, but nothing
-lights up while it reads. The word spans are now there and the sentences know
-which spans they own; what has not happened yet is pointing the existing
-sentence and word highlight at them. That is phase 3.
+Nothing re-renders. The sentence being read and the word being spoken are a
+CLASS on spans that already exist, which is what the app has always done for
+plain text. All that changed is that a sentence is now a RANGE of spans
+rather than one element wrapping them.
+
+    .w.lit / .g.lit      the sentence being read
+    .w.litp / .g.litp    the same, paused
+    .w.now               the single word being spoken, on top of the band
+
+THE GAPS ARE LIT TOO. The whitespace inside a sentence gets its own span, so
+the band is a continuous ribbon rather than a row of separately lit words with
+pale stripes between them. Gaps are kept OUT of the word span list, which is
+the contract phase 2 established and which nothing else may enter. A block
+boundary has no span and needs none: there is nothing to see between two
+blocks, they are on different lines.
+
+THE COLOURS DO NOT FIGHT THE FORMATTING.
+
+    headings      told apart by size and weight, never by ink, so the yellow
+                  band has nothing to argue with
+    links         blue on yellow is unreadable, so a lit word takes the band's
+                  ink; the underline was moved onto the word span itself so it
+                  follows that colour instead of staying blue underneath
+    inline code   its chip background and border are dropped under the band,
+                  via :has. Where :has is missing the chip keeps its frame,
+                  which is untidy and perfectly readable
+    focus mode    dims unlit words and gaps, the same as it does plain text
+
+SPEECHIFY'S SPEECH MARKS ARE NOT WORD RUNS. A real sentence produced a token
+of "Two\n" and then a token of "\n" on its own. A token can therefore cover
+one span, several spans, or NONE. The empty ones are KEPT, with no elements,
+so the array stays one for one with the server's timings. Dropping them would
+slide every later index up by one and the highlight would run a word ahead of
+the voice for the rest of the sentence. Kept, a pure-whitespace token simply
+lights nothing, which is exactly what is happening: a pause.
+
+THE OFFSET SHIFT IS DEFENCE, AND SAYS SO. Word timings are offsets into the
+STRIPPED sentence; spans are numbered against the whole spoken string. The
+code adds the leading whitespace strip() removed. Measured against the
+splitter the server actually uses, that lead is ALWAYS ZERO, because the
+splitter consumes the space after the full stop. The line is kept because it
+costs one subtraction and a future change to the splitter would otherwise move
+every word by a word, silently. It is tested on a constructed case so the
+arithmetic can still be caught if it is ever wrong.
+
+TAPPING A WORD reads from that sentence, which is what tapping a sentence has
+always done in plain text. Without it a Markdown text could not be started
+from the middle at all, because there is no .sent to tap.
+
+TEXT MODE STRIPS EVERYTHING. Not "formatting with the colours off": every
+heading back to body size and weight, every chip, border, underline and image
+gone, one white ink.
+
+EDIT MODE EDITS THE MARKDOWN SOURCE. A separate editor holds text.txt, markers
+and all, and the rendered document is hidden while it is open. Making the
+rendered HTML contentEditable would have let a heading be typed into and then,
+on commit, read back as flat text with every marker already consumed - the
+formatting would quietly disappear the first time anything was fixed.
+Committing sends the edited source back down the same road a paste takes, so
+formatting and highlight both come back. The editor is emptied whenever a text
+is opened, or it would commit the previous text over this one.
 
 Plain text is completely unaffected: same .sent spans, same highlight, same
 sentences, byte for byte.
 
 Also still owed, and belonging to the later phases:
 
-    EDIT mode on a Markdown text edits the RENDERED TEXT, not the Markdown
-      source, so committing an edit flattens the formatting. Phase 3.
-    tap a sentence to read from there does nothing in a Markdown text,
-      because there are no .sent spans to tap. Phase 3.
     a heading glues to the paragraph after it, because the sentence splitter
       only breaks on . ! ? and a heading has none. Phase 4.
     a table reads as its cells run together, and a fenced code block is read
