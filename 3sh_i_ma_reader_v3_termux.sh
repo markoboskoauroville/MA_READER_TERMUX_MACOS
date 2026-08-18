@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.15
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.16
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.15%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.16%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -4301,7 +4301,13 @@ textarea::placeholder{color:var(--faint)}
   text-transform:uppercase; margin:0 0 14px}
 .doc{font-family:var(--read-font); font-size:var(--read);
   line-height:var(--read-lh); color:var(--page-text);
-  max-width:var(--col); margin:0 auto}
+  max-width:var(--col); margin:0 auto;
+  /* Room after the last word, so the LAST sentence can also travel to the
+     top. Without it the document runs out, the scroll clamps, and the
+     reading line drifts down the screen for the final few sentences, which
+     is precisely the wandering the teleprompter rule exists to stop. The
+     space is blank page, not content, and only ever seen at the very end. */
+  padding-bottom:78vh}
 .sent{padding:1px 2px; border-radius:5px; transition:background .12s,color .12s}
 .sent.active{background:var(--sent); color:var(--sent-fg); font-weight:600;
   box-shadow:0 0 0 3px var(--sent)}
@@ -4878,7 +4884,7 @@ body.hassession .tab.player{display:block}
    colour at all, so it can simply be read with the eye. */
 body.mode-text .sent, body.mode-text .sent *{background:none !important;
   color:#fff !important; box-shadow:none !important; border-radius:0 !important}
-body.mode-text .doc, body.mode-text #offDoc{color:#fff}
+body.mode-text .doc, body.mode-text #offDoc{color:#fff; padding-bottom:78vh}
 /* EDIT mode: the text becomes a real editable field. */
 body.mode-edit .reader-scroll .doc{outline:none; caret-color:var(--tune);
   -webkit-user-select:text; user-select:text; white-space:pre-wrap}
@@ -5118,7 +5124,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.15 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.16 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6488,21 +6494,40 @@ const MDLIT = {band: [], now: []};
    view jump, and it jumps to put the START OF THE SENTENCE near the top: the
    words just spoken above, the words about to come below.
 
-   Two shapes of sentence to handle. In a plain text the sentence is one .sent
-   element with a box of its own. In Markdown there is no such element, the
-   sentence is a RANGE of word spans, so its box is built from the first and
-   last of them. Either way, if it is taller than the window there is no
-   arrangement that shows all of it and the word itself is used instead. */
-function sentenceBox(el){
-  if(MD.mapped && MDLIT.band && MDLIT.band.length){
-    const f = MDLIT.band[0].getBoundingClientRect();
-    const l = MDLIT.band[MDLIT.band.length - 1].getBoundingClientRect();
-    return {top: f.top, bottom: l.bottom, height: l.bottom - f.top};
-  }
-  const s = el && el.closest ? el.closest(".sent") : null;
-  return s ? s.getBoundingClientRect() : null;
-}
+   Since every sentence now begins at the top, a word can only fall off the
+   bottom inside a sentence TALLER than the screen, and then the word itself
+   is what gets brought up. Working out the sentence's own box is no longer
+   needed and the function that did it has gone. */
 let lastAutoScroll = 0;
+
+/* ---------- the teleprompter rule ----------
+   EVERY sentence begins at the top of the screen. Not only when it has
+   wandered out of view: every one, every time, unconditionally.
+
+   The old rule only moved when a sentence had already crossed an edge, which
+   meant the reading line landed wherever the previous sentence happened to
+   leave it, sometimes at the top, sometimes halfway down, sometimes at the
+   very bottom with nothing after it. The eye had to search for the line each
+   time. A teleprompter does not make you search: the line you are on is
+   always in the same place, and everything below it is what is coming.
+
+   TOP_PAD is how far below the top edge the sentence sits. A little air, so
+   the first line is not jammed against the frame.
+
+   This is never throttled. It is the main movement of the app, and a sentence
+   change is a deliberate event, not the per-word chatter that the throttle
+   exists to damp. */
+const TOP_PAD = 12;
+function sentenceToTop(el, scroller){
+  if(!el) return;
+  const sc = $(scroller || "#readerScroll"); if(!sc) return;
+  const r = el.getBoundingClientRect(), pr = sc.getBoundingClientRect();
+  const delta = r.top - (pr.top + TOP_PAD);
+  if(Math.abs(delta) < 2) return;        /* already there, do not jitter */
+  lastAutoScroll = Date.now();
+  sc.scrollBy({top: delta, behavior: "smooth"});
+}
+
 function keepWordVisible(el, scroller){
   if(!el || ST.mode !== "read") return;
   const sc = $(scroller || "#readerScroll"); if(!sc) return;
@@ -6513,11 +6538,13 @@ function keepWordVisible(el, scroller){
   const wr = el.getBoundingClientRect();
   if(wr.top >= pr.top + 8 && wr.bottom <= pr.bottom - 70) return;  /* visible */
 
-  const sr = sentenceBox(el);
-  const roomFor = pr.height - 90;
-  const anchor = (sr && sr.height > 0 && sr.height <= roomFor) ? sr : wr;
+  /* With every sentence starting at the top, a word can only fall off the
+     bottom inside a sentence TALLER than the screen. There is no arrangement
+     that shows all of such a sentence, so the word itself is brought up. The
+     sentence is deliberately not used as the anchor here: it starts above the
+     top edge by definition, and going back to it would undo the reading. */
   lastAutoScroll = now;
-  sc.scrollBy({top: anchor.top - (pr.top + 12), behavior: "smooth"});
+  sc.scrollBy({top: wr.top - (pr.top + TOP_PAD), behavior: "smooth"});
 }
 
 function mdUnlight(){
@@ -6547,17 +6574,9 @@ function mdHighlight(i, paused){
   MDLIT.band = band;
   /* Scroll to the FIRST word of the sentence. The band is not one element, so
      there is no single box to bring into view. */
-  const first = band[0];
-  const sc = $("#readerScroll");
-  if(sc && first){
-    const r2 = first.getBoundingClientRect(), pr = sc.getBoundingClientRect();
-    if(r2.top < pr.top + 40 || r2.bottom > pr.bottom - 90){
-      /* to the top, not the centre: centring wastes the whole upper half of
-         the screen on words already spoken */
-      lastAutoScroll = Date.now();
-      sc.scrollBy({top: r2.top - (pr.top + 12), behavior: "smooth"});
-    }
-  }
+  /* The band is not one element, so the first word of the sentence is what
+     goes to the top. Same rule, same place on the screen. */
+  sentenceToTop(band[0]);
 }
 
 /* The word timings arrive as character offsets into ST.sentences[i], which is
@@ -6759,12 +6778,7 @@ function highlight(i, paused){
     .forEach(e=>e.classList.remove("active","paused"));
   const el = sentEl(i); if(!el) return;
   el.classList.add(paused ? "paused" : "active");
-  const sc = $("#readerScroll");
-  const r = el.getBoundingClientRect(), pr = sc.getBoundingClientRect();
-  if(r.top < pr.top+40 || r.bottom > pr.bottom-90){
-    lastAutoScroll = Date.now();
-    sc.scrollBy({top: r.top - (pr.top + 12), behavior: "smooth"});
-  }
+  sentenceToTop(el);
   updateCounter();
 }
 /* ---------- how long is left ----------
@@ -8586,12 +8600,7 @@ function offHighlightSentence(i, paused){
     .forEach(e=>e.classList.remove("active","paused"));
   const el=offSentEl(i); if(!el) return;
   el.classList.add(paused?"paused":"active");
-  const sc=$("#offReaderScroll");
-  const r=el.getBoundingClientRect(), pr=sc.getBoundingClientRect();
-  if(r.top<pr.top+40 || r.bottom>pr.bottom-90){
-    lastAutoScroll = Date.now();
-    sc.scrollBy({top: r.top - (pr.top + 12), behavior:"smooth"});
-  }
+  sentenceToTop(el, "#offReaderScroll");
 }
 function offClearWords(i){
   const sp=OFF.spans[i]; if(sp) sp.forEach(o=>o.el.classList.remove("now"));

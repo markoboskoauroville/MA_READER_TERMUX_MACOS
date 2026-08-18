@@ -427,6 +427,29 @@ scroll, and someone listening should not have to be careful where he touches.
 Tapping the sentence already playing now restarts it; the player bar pauses.
 Gone from the client, the page, the Help text, the chips and the server state.
 
+## The teleprompter rule
+
+EVERY sentence begins at the top of the screen. Not only when it has wandered
+out of view: every one, every time, unconditionally. One function,
+sentenceToTop, called from all three readers: plain, Markdown and offline.
+
+The old rule only moved when a sentence had crossed an edge, so the reading
+line landed wherever the previous sentence happened to leave it, sometimes at
+the top, sometimes halfway down, sometimes at the very bottom with nothing
+after it. The eye had to hunt for the line each time. A teleprompter does not
+make you hunt: the line you are on is always in the same place and everything
+below it is what is coming.
+
+TOP_PAD is 12px of air below the top edge. A move smaller than 2px is skipped,
+so an already-placed sentence does not jitter. The sentence jump is NEVER
+throttled: it is the main movement of the app and a sentence change is a
+deliberate event, not the per-word chatter the throttle exists to damp.
+
+The reader carries 78vh of blank padding after the last word. Without it the
+document runs out, the scroll clamps, and the reading line drifts down the
+screen for the final few sentences, which is exactly the wandering this rule
+exists to stop.
+
 ## The lit word stays on the screen
 
 Following the SENTENCE is not enough: a sentence can be taller than the
@@ -438,10 +461,10 @@ page that creeps on every word is worse than one that never moves. When the
 word crosses an edge the view jumps so the START of its sentence sits near the
 top: spoken words above, coming words below.
 
-Two shapes of sentence. In plain text it is one .sent element with a box of
-its own. In Markdown there is no such element, the sentence is a RANGE of word
-spans, so its box is built from the first and last of them. Either way, if it
-is taller than the window the word itself is used instead.
+Since every sentence now begins at the top, a word can only fall off the
+bottom inside a sentence TALLER than the screen, and then the WORD is what is
+brought up, never the sentence: the sentence starts above the top edge by
+definition, and going back to it would undo the reading.
 
 Throttled to one move per 250 ms so a hand scroll is never fought, and off
 outside READ mode. The offline player follows the same rule, with its own
