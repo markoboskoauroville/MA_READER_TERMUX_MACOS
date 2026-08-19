@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.20
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.21
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.20%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.21%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -719,7 +719,7 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
 # a single request to rebuild, and carrying a stale one across an update is
 # how the picker got stuck showing four voices out of nine hundred.
-KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json web_state.json web_state.json.bak browser.txt"
+KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json groq_api.txt groq_failed.json groq_model.json web_state.json web_state.json.bak browser.txt"
 
 # --------------------------------------------------- is it running already? --
 # A live server holds the old code in memory and keeps serving it after every
@@ -1955,6 +1955,264 @@ SP_PER_SET = 4                # four buttons, and no room for a fifth
 SP_PER_SEX = 2                # so each page is two female and two male
 SP_MODEL = "simba-english"
 
+
+# ===========================================================================
+# GROQ
+#
+# Used for one job only: deciding whether a text is English. Everything that
+# is not English is Croatian, because those are the only two languages this
+# app reads. One question, one word back.
+#
+# THE USER AGENT IS NOT OPTIONAL. api.groq.com sits behind Cloudflare, which
+# blocks Python's default "Python-urllib/3.x" and answers 403 with "error
+# code: 1010" on EVERY endpoint including /models. That looks exactly like ten
+# dead keys and is not a key problem at all. Measured, not guessed.
+GROQ_API = "https://api.groq.com/openai/v1"
+GROQ_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+GROQ_KEYFILE = os.path.join(WEB_DIR, "groq_api.txt")
+GROQ_FAILED = os.path.join(WEB_DIR, "groq_failed.json")
+GROQ_STATE = os.path.join(WEB_DIR, "groq_model.json")
+
+# Preference order, measured on Baba's account 18.8.2026. compound-mini is
+# fastest and answers in one clean word; allam-2-7b is nearly as quick; the
+# gpt-oss pair put their thinking in a separate field and need token headroom;
+# qwen writes <think> aloud inside the content and must be stripped.
+# The app is NOT limited to this list: if Groq retires every one of them it
+# discovers what is on offer and tries whatever can hold a conversation.
+GROQ_PREFERRED = ["groq/compound-mini", "allam-2-7b", "openai/gpt-oss-20b",
+                  "groq/compound", "openai/gpt-oss-120b", "qwen/qwen3.6-27b"]
+# these cannot answer a question: speech in, speech out, or a safety filter
+GROQ_NOT_CHAT = ("whisper", "orpheus", "prompt-guard", "safeguard", "tts")
+
+_groq_i = 0
+_groq_err = ""
+_groq_rest = {}          # key fingerprint -> resting until (a 429 is not death)
+
+
+def _groq_fp(k):
+    return hashlib.sha256(k.encode("utf-8")).hexdigest()[:16]
+
+
+def groq_keys():
+    """Every key in the file, in order. Shape only RANKS, it never discards:
+    providers rebrand key formats without notice."""
+    out = []
+    try:
+        raw = open(GROQ_KEYFILE, encoding="utf-8", errors="replace").read()
+    except Exception:
+        return out
+    for line in raw.splitlines():
+        t = line.strip()
+        # A key file is often pasted out of code, so a key can arrive wrapped
+        # in quotes and trailed by a comma. Baba's own file holds every key
+        # twice, once bare and once quoted; without this the quoted copies
+        # look like five extra keys that all fail to authenticate.
+        t = t.strip().rstrip(",").strip()
+        if len(t) >= 2 and t[0] in "\"'" and t[-1] == t[0]:
+            t = t[1:-1].strip()
+        if not t or t.startswith("#") or t == "[DELETED]":
+            continue
+        if len(t) < 20 or " " in t:
+            continue
+        out.append(t)
+    out.sort(key=lambda k: 0 if k.startswith("gsk_") else 1)
+    seen, uniq = set(), []
+    for k in out:
+        if k not in seen:
+            seen.add(k); uniq.append(k)
+    return uniq
+
+
+def groq_dead():
+    try:
+        return set(json.load(open(GROQ_FAILED, encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def groq_condemn(key, reason):
+    d = groq_dead(); d.add(_groq_fp(key))
+    try:
+        tmp = GROQ_FAILED + ".part"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sorted(d), f)
+        os.replace(tmp, GROQ_FAILED)
+    except Exception:
+        pass
+
+
+def groq_live():
+    dead = groq_dead(); now = time.time()
+    return [k for k in groq_keys()
+            if _groq_fp(k) not in dead and _groq_rest.get(_groq_fp(k), 0) < now]
+
+
+def groq_call(path, payload=None, timeout=45, tries=None):
+    """One request, carried by the ring. 401/403 condemns the key and the same
+    request is retried on the next. A 429 rests that key for five minutes and
+    moves on: rate limiting is not death."""
+    global _groq_i, _groq_err
+    live = groq_live()
+    if not live:
+        return None, ("every Groq key is resting or dead" if groq_keys()
+                      else "no Groq key")
+    tries = tries if tries is not None else min(len(live), 4)
+    last = "no Groq key"
+    for _ in range(tries):
+        live = groq_live()
+        if not live:
+            return None, last
+        key = live[_groq_i % len(live)]
+        try:
+            data = json.dumps(payload).encode("utf-8") if payload is not None else None
+            req = urllib.request.Request(GROQ_API + path, data=data)
+            req.add_header("Authorization", "Bearer " + key)
+            req.add_header("User-Agent", GROQ_UA)     # never remove this
+            if data is not None:
+                req.add_header("Content-Type", "application/json")
+            body = urllib.request.urlopen(req, timeout=timeout).read()
+            _groq_err = ""
+            return json.loads(body.decode("utf-8", "replace")), ""
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                txt = ""
+                try:
+                    txt = e.read()[:120].decode("utf-8", "replace")
+                except Exception:
+                    pass
+                if "1010" in txt or "cloudflare" in txt.lower():
+                    # the User-Agent was refused, not the key. Condemning here
+                    # would wipe the whole ring for a header mistake.
+                    last = "Groq refused the request shape, not the key"
+                else:
+                    groq_condemn(key, "HTTP %d" % e.code)
+                    last = "a Groq key was rejected and marked dead"
+            elif e.code == 429:
+                _groq_rest[_groq_fp(key)] = time.time() + 300
+                last = "Groq is rate limiting; resting that key"
+            else:
+                last = "Groq HTTP %d" % e.code
+            _groq_i += 1
+        except Exception as e:
+            last = "Groq unreachable: %s" % str(e)[:60]
+            _groq_i += 1
+    _groq_err = last
+    return None, last
+
+
+def groq_model_saved():
+    try:
+        return json.load(open(GROQ_STATE, encoding="utf-8")).get("model") or ""
+    except Exception:
+        return ""
+
+
+def groq_model_save(m):
+    try:
+        tmp = GROQ_STATE + ".part"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"model": m, "at": int(time.time())}, f)
+        os.replace(tmp, GROQ_STATE)
+    except Exception:
+        pass
+
+
+def groq_candidates():
+    """What is actually on offer today, best first.
+
+    Asked of Groq rather than assumed, so that a model being retired is a
+    normal Tuesday rather than a broken app. The preferred ones come first if
+    they still exist; anything else that can hold a conversation follows, so
+    the app keeps working even if every name below is gone."""
+    d, err = groq_call("/models", timeout=30)
+    have = []
+    if d:
+        have = [m.get("id") for m in d.get("data", []) if m.get("id")]
+    if not have:
+        return list(GROQ_PREFERRED), err
+    good = [m for m in have if not any(b in m.lower() for b in GROQ_NOT_CHAT)]
+    ordered = [m for m in GROQ_PREFERRED if m in good]
+    ordered += [m for m in sorted(good) if m not in ordered]
+    return ordered, ""
+
+
+def _groq_answer(text):
+    """Pull YES or NO out of whatever shape the model replied in.
+
+    Some models write their reasoning inside the content between <think> tags;
+    others put it in a separate field and leave content empty. Only the answer
+    is wanted, and only if it is unambiguous."""
+    if not text:
+        return ""
+    t = re.sub(r"<think>.*?</think>", " ", text, flags=re.S | re.I)
+    t = re.sub(r"<[^>]+>", " ", t)
+    up = t.upper()
+    yes = re.search(r"\bYES\b", up)
+    no = re.search(r"\bNO\b", up)
+    if yes and not no:
+        return "YES"
+    if no and not yes:
+        return "NO"
+    if yes and no:                      # both words appear: take the first
+        return "YES" if yes.start() < no.start() else "NO"
+    return ""
+
+
+def groq_is_english(text):
+    """Ask Groq whether this is English. Returns (True/False/None, model, err).
+
+    None means nobody could be asked, which is different from 'not English'
+    and must never be turned into Croatian by accident."""
+    body = text or ""
+    spans = split_sentences(body)[:5]
+    sample = " ".join(body[a:b].strip() for a, b in spans).strip()[:1200]
+    if not sample:
+        return None, "", "nothing to look at"
+    # A model asked "is 12345 English?" answers NO, quite correctly, and NO
+    # here means Croatian. Digits and punctuation are neither language, so
+    # they are never worth a question.
+    if len(re.findall(r"[^\W\d_]", sample, flags=re.UNICODE)) < 8:
+        return None, "", "not enough words to judge"
+    order = []
+    saved = groq_model_saved()
+    if saved:
+        order.append(saved)
+    cands, err = groq_candidates()
+    order += [m for m in cands if m not in order]
+    if not order:
+        return None, "", err or "no Groq model available"
+    last = err or "no Groq model answered"
+    for model in order[:5]:
+        payload = {
+            "model": model, "temperature": 0, "max_tokens": 512,
+            "messages": [
+                {"role": "system",
+                 "content": "You identify languages. Answer with exactly one "
+                            "word: YES or NO. No explanation."},
+                {"role": "user",
+                 "content": "Is the following text written in English?\n\n" + sample},
+            ],
+        }
+        d, e = groq_call("/chat/completions", payload=payload, timeout=40)
+        if not d:
+            last = e or last
+            continue
+        try:
+            msg = d["choices"][0]["message"]
+        except Exception:
+            last = "Groq replied in an unexpected shape"
+            continue
+        ans = _groq_answer(msg.get("content") or "")
+        if not ans:
+            # a model that will not answer plainly is the wrong model for this
+            last = "%s did not answer yes or no" % model
+            continue
+        if model != saved:
+            groq_model_save(model)
+        return (ans == "YES"), model, ""
+    return None, "", last
+
 # ---------------------------------------------------------------------------
 # CROATIAN
 #
@@ -2657,7 +2915,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "floatPaste": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
-                  "croVoice": "lesya", "lang": "eng",
+                  "croVoice": "lesya", "lang": "eng", "langAuto": "eng",
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 13, "focus": False,
@@ -2720,8 +2978,10 @@ def load_state():
     # A font or a pane that no longer exists must not survive on disk. The
     # client copes with either, but a stored value nobody recognises is a
     # small lie that outlives the release that made it.
-    if st.get("lang") not in ("eng", "hr"):
+    if st.get("lang") not in ("eng", "hr", "auto"):
         st["lang"] = "eng"
+    if st.get("langAuto") not in ("eng", "hr"):
+        st["langAuto"] = "eng"
     if st.get("croVoice") not in [c["id"] for c in CRO_VOICES]:
         st["croVoice"] = CRO_DEFAULT
     if st.get("font") not in ("sans", "book", "serif", "mono"):
@@ -3541,6 +3801,62 @@ def api_preview_hr(vid):
                 os.replace(mp3 + ".part", mp3)
                 sp_note_usage(_sp_last, body.get("billable_characters_count"))
     return send_file(mp3, mimetype="audio/mpeg")
+
+
+@app.route("/api/groq/status")
+def api_groq_status():
+    keys = groq_keys(); dead = groq_dead()
+    live = [k for k in keys if _groq_fp(k) not in dead]
+    return jsonify({
+        "total": len(keys), "live": len(live), "dead": len(keys) - len(live),
+        "model": groq_model_saved(), "err": _groq_err,
+    })
+
+
+@app.route("/api/groq/keyfile", methods=["POST"])
+def api_groq_keyfile():
+    """Keys arrive as a file, never typed. Written 0600 and never echoed."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file"}), 400
+    raw = f.read().decode("utf-8", "replace")
+    try:
+        os.makedirs(WEB_DIR, exist_ok=True)
+        tmp = GROQ_KEYFILE + ".part"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        os.replace(tmp, GROQ_KEYFILE)
+        os.chmod(GROQ_KEYFILE, 0o600)
+    except Exception as e:
+        return jsonify({"error": str(e)[:80]}), 500
+    return jsonify({"ok": True, "keys": len(groq_keys())})
+
+
+@app.route("/api/groq/test", methods=["POST"])
+def api_groq_test():
+    """Prove the ring end to end on a sentence we already know the answer to."""
+    eng, model, err = groq_is_english("This is a plain English sentence.")
+    return jsonify({"ok": eng is True, "model": model, "err": err})
+
+
+@app.route("/api/lang/detect", methods=["POST"])
+def api_lang_detect():
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get("text") or ""
+    if not text and data.get("tid"):
+        try:
+            raw = lib_text(data["tid"]) or ""
+            text = " ".join(raw[a:b] for a, b in split_sentences(raw)[:5])
+        except Exception:
+            text = ""
+    eng, model, err = groq_is_english(text)
+    if eng is None:
+        # Nobody could be asked. Fall back to reading the text ourselves
+        # rather than guessing English and mangling a Croatian page.
+        guess = "hr" if looks_croatian(text) else "eng"
+        return jsonify({"lang": guess, "by": "local", "model": "", "err": err})
+    return jsonify({"lang": "eng" if eng else "hr", "by": "groq",
+                    "model": model, "err": ""})
 
 
 @app.route("/api/cro_voices")
@@ -4656,6 +4972,7 @@ body.mode-edit .doc.mdhidden{display:none}
   background:linear-gradient(rgba(190,130,235,.07),rgba(190,130,235,.07)),var(--panel)}
 .group.g-voice{--gc:var(--screen);
   background:linear-gradient(rgba(70,150,230,.07),rgba(70,150,230,.07)),var(--panel)}
+.group.g-groq{--gc:#e879f9}
 .group.g-adv{--gc:var(--teal);
   background:linear-gradient(rgba(63,185,200,.06),rgba(63,185,200,.06)),var(--panel)}
 /* inside a card the rows sit on the sheet colour, one step back from the card,
@@ -4925,6 +5242,7 @@ body.hassession .tab.player{display:block}
 /* The language button is an engtab like the others, but it names a state
    rather than a destination, so it is always lit. */
 #langBtn{flex:0 0 auto; min-width:64px}
+#langBtn.auto b{font-size:11px; letter-spacing:.04em}
 #langBtn.on b{letter-spacing:.06em}
 .engtab{flex:1; border:1px solid var(--line); background:var(--panel);
   color:var(--dim); border-radius:13px; padding:11px 8px 9px; text-align:center;
@@ -5271,7 +5589,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.20 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.21 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5601,6 +5919,18 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="syncends"><span>later</span><span>earlier</span></div>
   </div>
 
+  <div class="group g-groq" data-eng="app">
+    <div class="gtitle">Automatic language</div>
+    <div class="langhint">Groq is asked whether the text is English. Anything
+      that is not English is Croatian. Only used when the button says AUTO.</div>
+    <div class="chips" style="margin:6px 0">
+      <button class="chip" id="groqPick">Choose .txt key file</button>
+      <button class="chip" id="groqTest">Test</button>
+    </div>
+    <div class="setlegend" id="groqInfo">no key</div>
+    <input type="file" id="groqFile" accept=".txt,text/plain" style="display:none">
+  </div>
+
   <div class="group g-adv" data-eng="app">
     <h3>Advanced</h3>
     <div class="chips">
@@ -5772,7 +6102,7 @@ const ST = {
      two as the same value is what made unticked voices come back on every
      restart: the seed could not tell a decision from a blank. */
   /* Baba's own starting point, so a fresh install is not a chore. */
-  lang: "eng", croVoice: "lesya", voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
+  lang: "eng", langAuto: "eng", croVoice: "lesya", voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
   pane: "app",
   mode: "read",
   tid: "", title: "", sentences: [],
@@ -5821,7 +6151,32 @@ function enabledSet(){ return new Set(ST.enabledLangs||[]); }
 /* The reading language filters everything. A voice that cannot pronounce the
    language on screen has no business being offered, and certainly no business
    sitting on the top row where a pocket can press it. */
-function langCode(){ return ST.lang === "hr" ? "hr" : "en"; }
+/* AUTO is not a language, it is a promise to find out. Until Groq answers,
+   the last answer stands, and English is the opening assumption. */
+function langCode(){
+  const l = (ST.lang === "auto") ? (ST.langAuto || "eng") : ST.lang;
+  return l === "hr" ? "hr" : "en";
+}
+function autoDetect(text){
+  if(ST.lang !== "auto") return;
+  const body = text || (ST.sentences || []).slice(0, 5).join(" ");
+  if(!body.trim()) return;
+  api("/api/lang/detect", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text: body})})
+    .then(r=>r.json()).then(d=>{
+      if(ST.lang !== "auto") return;          /* switched away while waiting */
+      const was = ST.langAuto;
+      ST.langAuto = (d.lang === "hr") ? "hr" : "eng";
+      if(was !== ST.langAuto){
+        renderVoices(); renderEdgeGrid();
+        try{ renderCroGrid(); }catch(e){}
+        toast((ST.langAuto === "hr" ? "Croatian" : "English") +
+              (d.by === "groq" ? "" : " (guessed here)"));
+      }
+      persist();
+    }).catch(()=>{});
+}
 function edgeVoices(){
   const on = enabledSet(), want = langCode();
   return ST.voices.filter(v => v.lang === want && on.has(v.lang));
@@ -6110,13 +6465,7 @@ function applyEngineCards(){
   const pane = ST.pane || ST.engine || "edge";
   document.querySelectorAll("#engTabs .engtab").forEach(b=>
     b.classList.toggle("on", b.dataset.pane === pane));
-  { const lb = $("#langBtn");
-    if(lb){
-      lb.classList.add("on");            /* always lit: it is a state, not a tab */
-      lb.innerHTML = "<b>" + (ST.lang === "hr" ? "HR" : "ENG") + "</b>";
-      lb.title = (ST.lang === "hr") ? "Reading Croatian. Tap for English."
-                                    : "Reading English. Tap for Croatian.";
-    } }
+  renderLangBtn();
   document.querySelectorAll("#sheet .group[data-eng]").forEach(g=>{
     g.style.display = (g.dataset.eng === pane) ? "" : "none";
   });
@@ -6124,7 +6473,7 @@ function applyEngineCards(){
 /* Changing the language must leave a usable voice behind. If the one in hand
    cannot speak the new language, the first that can is taken. */
 function setLang(l){
-  l = (l === "hr") ? "hr" : "eng";
+  l = (l === "hr" || l === "auto") ? l : "eng";
   if(l === ST.lang) return;
   ST.lang = l;
   /* Leave a usable voice behind, and prefer the engine already in hand: a
@@ -6137,10 +6486,34 @@ function setLang(l){
     const first = mine[0] || other[0];
     if(first) setVoice(first.id, true);   /* quiet: setLang says it instead */
   }
+  renderLangBtn();
   refreshToggles(); renderVoices(); renderEdgeGrid(); renderLangList();
   try{ renderCroGrid(); }catch(e){}
   persist();
-  toast(l === "hr" ? "Reading Croatian" : "Reading English");
+  toast(l === "auto" ? "Language decided automatically"
+      : l === "hr"   ? "Reading Croatian" : "Reading English");
+  if(l === "auto") autoDetect();
+}
+/* THE BUTTON IS PAINTED IN EXACTLY ONE PLACE.
+   It used to be painted inside applyEngineCards, which setPane calls and
+   setLang does not. So the language changed, the toast fired, and the button
+   went on showing the old word. One painter, called by everyone who can
+   change the language, is the whole fix. */
+function renderLangBtn(){
+  const lb = $("#langBtn"); if(!lb) return;
+  lb.classList.add("on");          /* always lit: it names a state, not a tab */
+  const l = ST.lang || "eng";
+  lb.innerHTML = "<b>" + (l === "hr" ? "HR" : l === "auto" ? "AUTO" : "ENG") + "</b>";
+  lb.classList.toggle("auto", l === "auto");
+  lb.title = l === "auto" ? "Groq decides. Tap for English."
+           : l === "hr"   ? "Reading Croatian. Tap for automatic."
+                          : "Reading English. Tap for Croatian.";
+}
+/* ENG -> HR -> AUTO -> ENG. Three states on one button, because a second
+   button would be a second small target. */
+function nextLang(){
+  const l = ST.lang || "eng";
+  return l === "eng" ? "hr" : l === "hr" ? "auto" : "eng";
 }
 function setPane(p){
   if(p !== "edge" && p !== "speechify" && p !== "app") p = "edge";
@@ -6325,6 +6698,38 @@ function loadCroVoices(){
   }).catch(()=>{});
 }
 
+function renderGroq(){
+  api("/api/groq/status").then(r=>r.json()).then(d=>{
+    const el=$("#groqInfo"); if(!el) return;
+    el.textContent = d.total
+      ? (d.live + " of " + d.total + " keys live" +
+         (d.model ? " \u00b7 " + d.model : "") + (d.dead ? " \u00b7 " + d.dead + " dead" : ""))
+      : "no key";
+  }).catch(()=>{});
+}
+function wireGroq(){
+  const pick=$("#groqPick"), file=$("#groqFile"), test=$("#groqTest");
+  if(pick && file){
+    pick.onclick = ()=> file.click();
+    file.onchange = ()=>{
+      const f=file.files && file.files[0]; if(!f) return;
+      const fd=new FormData(); fd.append("file", f);
+      toast("Reading the key file...");
+      api("/api/groq/keyfile", {method:"POST", body:fd}).then(r=>r.json()).then(d=>{
+        toast(d.error ? d.error : (d.keys + " Groq key(s) kept"));
+        renderGroq();
+      }).catch(()=>toast("Could not read that file."));
+      file.value="";
+    };
+  }
+  if(test) test.onclick = ()=>{
+    toast("Asking Groq...");
+    api("/api/groq/test", {method:"POST"}).then(r=>r.json()).then(d=>{
+      toast(d.ok ? ("Groq answered, using " + d.model) : (d.err || "Groq did not answer"));
+      renderGroq();
+    }).catch(()=>toast("Groq could not be reached."));
+  };
+}
 function renderSpKeyList(){
   const wrap = $("#spList"); if(!wrap) return;
   const list = (ST.spInfo && ST.spInfo.keyList) || [];
@@ -7945,6 +8350,7 @@ function stateBody(){
         bothEngines:!!ST.bothEngines,
         spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
         croVoice:ST.croVoice||"lesya", lang:ST.lang||"eng",
+        langAuto:ST.langAuto||"eng",
         fullOnPaste:!!ST.fullOnPaste,
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read", pane:ST.pane||"app",
         voiceBar:!!ST.voiceBar,
@@ -8076,7 +8482,7 @@ function bind(){
   document.querySelectorAll("#engTabs .engtab").forEach(b=>{
     b.onclick = ()=> setPane(b.dataset.pane);
   { const lb = $("#langBtn");
-    if(lb) lb.onclick = ()=> setLang(ST.lang === "hr" ? "eng" : "hr"); }
+    if(lb) lb.onclick = ()=> setLang(nextLang()); }
   });
   /* the Speechify key ring. The file is handed straight to the server; the
      browser reads no key out of it and nothing is ever echoed back. */
@@ -8529,6 +8935,7 @@ function wireCenterTaps(scrollSel, isOffline){
    Paste button, the P key from anywhere, and Read for text typed by hand. */
 function readTextNow(text){
   if(!text || !text.trim()){ toast("Nothing to read."); return; }
+  autoDetect(text);              /* a new text is the moment to ask */
   setStatus("Preparing...");
   api("/api/prepare", {method:"POST", headers:{"Content-Type":"application/json"},
        body: prepareBody(text)})
@@ -9236,7 +9643,8 @@ function boot(){
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : null;
     ST.croVoice = st.croVoice || "lesya";
-    ST.lang = (st.lang === "hr") ? "hr" : "eng";
+    ST.lang = (st.lang === "hr" || st.lang === "auto") ? st.lang : "eng";
+    ST.langAuto = (st.langAuto === "hr") ? "hr" : "eng";
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
     ST.hideTabs = !!st.hideTabs;
     ST.pane = (st.pane === "edge" || st.pane === "speechify") ? st.pane : "app";
@@ -9303,6 +9711,7 @@ function boot(){
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
     renderEdgeGrid(); renderSpKeyList(); renderSpDead(); loadCroVoices();
+    renderGroq(); wireGroq();
     mediaSetup(); wireFloat(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyLag(); applyWgap(); applySize();

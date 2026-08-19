@@ -95,6 +95,50 @@ either row moves the engine to match it.
 
 ### The reading language
 
+THREE STATES, one button: ENG, HR, AUTO. AUTO asks Groq whether the text is
+English; anything that is not English is Croatian, because those are the only
+two languages this app reads.
+
+THE BUTTON IS PAINTED IN EXACTLY ONE PLACE, renderLangBtn. It used to be
+painted inside applyEngineCards, which setPane calls and setLang does not, so
+the language changed, the toast fired, and the button went on showing the old
+word. One painter, called by everyone who can change the language.
+
+## Groq
+
+Used for one question only. GROQ IS SPELLED WITH A Q.
+
+THE USER AGENT IS NOT OPTIONAL. api.groq.com sits behind Cloudflare, which
+blocks Python's default agent and answers 403 with "error code: 1010" on every
+endpoint including /models. That looks exactly like a ring of dead keys and is
+not a key problem at all, so a 403 whose body mentions 1010 or cloudflare is
+recorded as a request-shape problem and condemns nothing.
+
+THE MODEL IS DISCOVERED, NEVER ASSUMED. A preference list is tried first, but
+the app asks /models for what exists today, drops anything that cannot hold a
+conversation (whisper, orpheus, prompt-guard, safeguard), and falls back to
+ANY remaining model. If every preferred name is retired the app finds the
+replacement by itself and remembers it. Measured order, fastest first:
+groq/compound-mini, allam-2-7b, openai/gpt-oss-20b, groq/compound,
+openai/gpt-oss-120b, qwen/qwen3.6-27b.
+
+ANSWERS ARRIVE IN DIFFERENT SHAPES. The gpt-oss pair put reasoning in a
+separate field and leave content empty unless given token headroom; qwen
+writes <think> aloud inside the content. Both are handled, and a model that
+will not answer plainly is skipped rather than trusted.
+
+NOBODY ANSWERING IS NOT AN ANSWER. If no key, no network or no model can be
+had, the app reads the text itself with looks_croatian rather than guessing
+English and mangling a Croatian page. Text with fewer than eight letters is
+never sent at all: a model asked whether 12345 is English says no, quite
+correctly, and no here would mean Croatian.
+
+Keys arrive by FILE PICKER, never typed, written 0600, never echoed. The dead
+list stores SHA-256 fingerprints, never keys. 401/403 condemns, 429 rests the
+key five minutes. Keys can arrive wrapped in quotes and trailing commas from
+being pasted out of code, so they are unwrapped: Baba's own file holds every
+key twice, once bare and once quoted.
+
 ONE button beside the three tabs at the top of Settings, the same size and
 shape as them. It shows the language IN FORCE, ENG or HR, and pressing it
 flips to the other. It is always lit, because it names a state rather than a
