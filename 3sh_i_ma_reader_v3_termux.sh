@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.18
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.19
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.18%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.19%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2657,7 +2657,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "floatPaste": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
-                  "croVoice": "lesya",
+                  "croVoice": "lesya", "lang": "eng",
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 13, "focus": False,
@@ -2720,6 +2720,8 @@ def load_state():
     # A font or a pane that no longer exists must not survive on disk. The
     # client copes with either, but a stored value nobody recognises is a
     # small lie that outlives the release that made it.
+    if st.get("lang") not in ("eng", "hr"):
+        st["lang"] = "eng"
     if st.get("croVoice") not in [c["id"] for c in CRO_VOICES]:
         st["croVoice"] = CRO_DEFAULT
     if st.get("font") not in ("sans", "book", "serif", "mono"):
@@ -4919,7 +4921,15 @@ body.hassession .tab.player{display:block}
    top and the cards below them are filtered: a card marked for one engine is
    simply not there while the other is chosen. Anything unmarked - speed, the
    pauses, the text, the colours - belongs to both and always shows. */
-.engtabs{display:flex; gap:8px; margin:2px 0 14px}
+.engtabs{display:flex; gap:8px; margin:2px 0 14px; align-items:stretch}
+/* Two halves of one switch, so it reads as a single choice rather than two
+   buttons that might both be off. */
+.langtog{flex:0 0 auto; display:flex; border:1px solid var(--line);
+  border-radius:12px; overflow:hidden; background:var(--panel)}
+.langtog .lt{border:none; background:transparent; color:var(--faint);
+  font-size:11px; font-weight:700; letter-spacing:.06em; padding:0 11px}
+.langtog .lt.on{background:color-mix(in srgb, var(--tune) 20%, transparent);
+  color:var(--text)}
 .engtab{flex:1; border:1px solid var(--line); background:var(--panel);
   color:var(--dim); border-radius:13px; padding:11px 8px 9px; text-align:center;
   line-height:1.25}
@@ -5265,7 +5275,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.18 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.19 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5405,6 +5415,13 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <button class="engtab" data-pane="edge"><b>Edge</b></button>
     <button class="engtab" data-pane="speechify"><b>Speechify</b></button>
     <button class="engtab" data-pane="app"><b>Settings</b></button>
+    <!-- Which language the app is reading. Everything else follows from it:
+         which voices appear at the top, which appear in the grids, and which
+         voice a fresh choice lands on. -->
+    <div class="langtog" id="langTog">
+      <button class="lt" data-lang="eng">ENG</button>
+      <button class="lt" data-lang="hr">HR</button>
+    </div>
   </div>
 
 
@@ -5758,7 +5775,7 @@ const ST = {
      two as the same value is what made unticked voices come back on every
      restart: the seed could not tell a decision from a blank. */
   /* Baba's own starting point, so a fresh install is not a chore. */
-  croVoice: "lesya", voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
+  lang: "eng", croVoice: "lesya", voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
   pane: "app",
   mode: "read",
   tid: "", title: "", sentences: [],
@@ -5804,9 +5821,22 @@ function active(){ return players[cur]; }
    in Settings and scrolls if there are many; Speechify fills it with exactly
    four, two female and two male, because that is all the room there is. */
 function enabledSet(){ return new Set(ST.enabledLangs||[]); }
+/* The reading language filters everything. A voice that cannot pronounce the
+   language on screen has no business being offered, and certainly no business
+   sitting on the top row where a pocket can press it. */
+function langCode(){ return ST.lang === "hr" ? "hr" : "en"; }
 function edgeVoices(){
-  const on = enabledSet();
-  return ST.voices.filter(v => on.has(v.lang));
+  const on = enabledSet(), want = langCode();
+  return ST.voices.filter(v => v.lang === want && on.has(v.lang));
+}
+/* In Croatian, Speechify's offering IS the Croatian pair: it has no Croatian
+   voice of its own, so the two auditioned foreigners are the whole set. */
+function croPseudoVoices(){
+  return (CROV || []).map(v => ({
+    id: "cro:" + v.id, vkey: "cro_" + v.id, name: v.name,
+    label: v.sub, sex: /female/i.test(v.sub) ? "F" : "M",
+    engine: "speechify", cro: v.id
+  }));
 }
 /* The Speechify catalogue is far longer than the four buttons at the top of
    the reader, so those four are a WINDOW onto it. This is that window, and
@@ -5852,12 +5882,21 @@ function togglePick(vkey){
    thing is one way too many, and the ticks are the honest one because they
    say WHICH voices as well as whether. */
 function topEdge(){ return edgeVoices(); }
-function topSp(){ return spPickedVoices(); }
+function topSp(){
+  return ST.lang === "hr" ? croPseudoVoices() : spPickedVoices();
+}
 function shownVoices(){
   return ST.engine === "speechify" ? topSp() : topEdge();
 }
 /* the whole list, for looking a voice up by id even when it is not on screen */
 function spAll(){ return ST.spVoices || []; }
+/* Is this the voice in hand? A Croatian seat answers on croVoice, since it
+   is not a catalogue voice and never becomes ST.voice. */
+function voiceIsCurrent(v){
+  if(!v) return false;
+  if(v.cro) return v.cro === ST.croVoice && ST.engine === "speechify";
+  return v.id === ST.voice;
+}
 function anyVoice(id){
   return spAll().find(x=>x.id===id) || ST.voices.find(x=>x.id===id);
 }
@@ -5872,7 +5911,7 @@ function voiceSub(v){
 }
 function voiceBtn(v){
   const b = document.createElement("button");
-  b.className = "voice " + sexClass(v) + (v.id===ST.voice ? " on":"");
+  b.className = "voice " + sexClass(v) + (voiceIsCurrent(v) ? " on":"");
   b.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
   b.onclick = ()=> setVoice(v.id);
   return b;
@@ -6023,7 +6062,7 @@ function applyEnabledLangs(onSet){
   // if some languages are shown but the active voice's language was hidden,
   // move to the first shown voice. If nothing is shown (zero languages), keep
   // ST.voice exactly as it is so the reader remembers the last choice.
-  if(shown.length && !shown.some(v=>v.id===ST.voice)){
+  if(shown.length && !shown.some(v=>voiceIsCurrent(v))){
     setVoice(shown[0].id);
   } else {
     renderVoices();
@@ -6031,7 +6070,20 @@ function applyEnabledLangs(onSet){
   renderLangList();
   persist();
 }
-function setVoice(id){
+function setVoice(id, quiet){
+  /* A Croatian seat is not a catalogue voice, it is a choice of WHICH foreign
+     voice reads Croatian, so it is stored as that and nothing else moves. */
+  if(typeof id === "string" && id.indexOf("cro:") === 0){
+    ST.croVoice = id.slice(4);
+    if(ST.engine !== "speechify"){ ST.engine = "speechify"; applyEngineCards(); }
+    renderVoices(); try{ renderCroGrid(); }catch(e){}
+    persist();
+    if(!quiet){
+      const cv = (CROV || []).find(x => x.id === ST.croVoice);
+      toast((cv ? cv.name : "That voice") + " reads Croatian");
+    }
+    return;
+  }
   const v = anyVoice(id); if(!v) return;
   /* With both rows on screen a voice can be picked from the engine that is
      not currently selected. The voice wins: the engine follows it, rather
@@ -6061,9 +6113,32 @@ function applyEngineCards(){
   const pane = ST.pane || ST.engine || "edge";
   document.querySelectorAll("#engTabs .engtab").forEach(b=>
     b.classList.toggle("on", b.dataset.pane === pane));
+  document.querySelectorAll("#langTog .lt").forEach(b=>
+    b.classList.toggle("on", b.dataset.lang === (ST.lang || "eng")));
   document.querySelectorAll("#sheet .group[data-eng]").forEach(g=>{
     g.style.display = (g.dataset.eng === pane) ? "" : "none";
   });
+}
+/* Changing the language must leave a usable voice behind. If the one in hand
+   cannot speak the new language, the first that can is taken. */
+function setLang(l){
+  l = (l === "hr") ? "hr" : "eng";
+  if(l === ST.lang) return;
+  ST.lang = l;
+  /* Leave a usable voice behind, and prefer the engine already in hand: a
+     person on Speechify who switches language wants the Croatian seat, not to
+     be thrown across to Edge. Only when the engine has nothing to offer does
+     the other one get a turn. */
+  const mine = (ST.engine === "speechify") ? topSp() : topEdge();
+  const other = (ST.engine === "speechify") ? topEdge() : topSp();
+  if(!mine.concat(other).some(v => voiceIsCurrent(v))){
+    const first = mine[0] || other[0];
+    if(first) setVoice(first.id, true);   /* quiet: setLang says it instead */
+  }
+  refreshToggles(); renderVoices(); renderEdgeGrid(); renderLangList();
+  try{ renderCroGrid(); }catch(e){}
+  persist();
+  toast(l === "hr" ? "Reading Croatian" : "Reading English");
 }
 function setPane(p){
   if(p !== "edge" && p !== "speechify" && p !== "app") p = "edge";
@@ -7867,7 +7942,7 @@ function stateBody(){
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines,
         spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
-        croVoice:ST.croVoice||"lesya",
+        croVoice:ST.croVoice||"lesya", lang:ST.lang||"eng",
         fullOnPaste:!!ST.fullOnPaste,
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read", pane:ST.pane||"app",
         voiceBar:!!ST.voiceBar,
@@ -7998,6 +8073,8 @@ function bind(){
   /* the two engine buttons at the top of Settings */
   document.querySelectorAll("#engTabs .engtab").forEach(b=>{
     b.onclick = ()=> setPane(b.dataset.pane);
+  document.querySelectorAll("#langTog .lt").forEach(b=>{
+    b.onclick = ()=> setLang(b.dataset.lang); });
   });
   /* the Speechify key ring. The file is handed straight to the server; the
      browser reads no key out of it and nothing is ever echoed back. */
@@ -9157,6 +9234,7 @@ function boot(){
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : null;
     ST.croVoice = st.croVoice || "lesya";
+    ST.lang = (st.lang === "hr") ? "hr" : "eng";
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
     ST.hideTabs = !!st.hideTabs;
     ST.pane = (st.pane === "edge" || st.pane === "speechify") ? st.pane : "app";

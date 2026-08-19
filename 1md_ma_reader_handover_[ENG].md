@@ -93,6 +93,34 @@ Both appear on the top row together whenever each has voices to show:
 Speechify first, Edge below, each scrolling on its own. Tapping a voice from
 either row moves the engine to match it.
 
+### The reading language
+
+A two-half switch, ENG and HR, sits beside the three tabs at the top of
+Settings. It says which language the app is reading, and everything follows
+from it.
+
+    ENG   Edge offers Sonia and Ryan; Speechify offers the ticked voices
+    HR    Edge offers Gabrijela and Srecko; Speechify offers the Croatian
+          pair, because it has no Croatian voice of its own and those two
+          auditioned foreigners ARE the whole set
+
+A voice that cannot pronounce what is on screen has no business being offered,
+and certainly none sitting on the top row where a pocket can press it. So the
+filter applies to the top row and to both grids at once.
+
+Changing the language leaves a usable voice behind and prefers the engine
+already in hand: someone on Speechify who switches wants the Croatian seat,
+not to be thrown across to Edge. With no Edge language ticked at all, the
+Croatian seats remain, so there is always something to read with.
+
+A Croatian seat is not a catalogue voice; it never becomes ST.voice. It is a
+choice of WHICH foreign voice reads Croatian, stored as croVoice, and
+voiceIsCurrent answers for it separately.
+
+The per-sentence rule underneath is unchanged: a mixed document still switches
+voice sentence by sentence whatever this switch says. The switch decides what
+is OFFERED, not what a Croatian sentence gets.
+
 ### Croatian
 
 Speechify has no Croatian voice at all: 985 voices walked, no hr-HR on any
