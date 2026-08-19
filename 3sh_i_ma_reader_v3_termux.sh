@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.24
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.25
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.24%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.25%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1808,16 +1808,37 @@ def synth_unit(text, voice, mp3_path, json_path):
         if end > total:
             total = end
     tokens = align_tokens(text, bounds, total or None)
-    # v11: listen to the finished clip and pin every word to the real
-    # waveform. v23 measures it in two bands and backtracks each onset, so the
-    # tag is "pcm2" and older "pcm" clips get re-measured once on first touch.
     engine = "edge2"
-    ref, dur, changed = refine_tokens(mp3_path, tokens)
-    if changed:
-        tokens = ref
-        engine = "pcm2"
-        if dur > 0:
-            total = dur
+    # THE WAVEFORM REFINEMENT IS NOT RUN WHEN THE ENGINE GAVE US MARKS.
+    #
+    # Measured here, in this repository, against Speechify's exact speech
+    # marks as ground truth (80 words, 6 sentences):
+    #
+    #     proportional   mean 297 ms   median 204 ms   19% within 50 ms
+    #     pcm2           mean 329 ms   median 215 ms   10% within 50 ms
+    #     whisper        mean  80 ms   median  44 ms   56% within 50 ms
+    #
+    # and on Edge audio with Whisper as the yardstick (53 words):
+    #
+    #     edge marks           mean 214 ms   median 87 ms
+    #     edge marks + pcm2    mean 217 ms   median 92 ms
+    #
+    # The refinement costs a full waveform analysis per sentence and buys
+    # nothing: three milliseconds worse on Edge marks, and worse than plain
+    # proportional timing when it starts from a flat guess. This reproduces
+    # independently what MAHA_TRANSCRIBE_STREAMLIT measured (88 ms against 89
+    # ms unrefined) and explains itself: there is no acoustic gap at a word
+    # boundary to snap to, because speech does not stop between words.
+    #
+    # It is kept for the case it was actually built for, a clip with NO marks
+    # at all, where something is better than nothing.
+    if not bounds:
+        ref, dur, changed = refine_tokens(mp3_path, tokens)
+        if changed:
+            tokens = ref
+            engine = "pcm2"
+            if dur > 0:
+                total = dur
     json.dump({"tokens": tokens, "bounds": bounds, "total": total,
                "engine": engine, "sil": measure_silence(mp3_path)},
               open(json_path, "w", encoding="utf-8"), ensure_ascii=False)
@@ -5821,7 +5842,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.24 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.25 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6015,18 +6036,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <!-- Then the rest, ordered by how often a thing is touched, not how
        important it sounds. Each card is tinted so the block you want is
        findable by colour. -->
-  <div class="group g-keys" data-eng="app">
-    <div class="gtitle">Keys</div>
-    <div class="chips" style="margin:6px 0">
-      <button class="chip" id="keyPick">Choose .txt key file</button>
-      <button class="chip" id="keyRefresh">Refresh</button>
-    </div>
-    <div class="langhint">One file, any mess. Each key is filed by its own
-      shape; you are never asked which is which.</div>
-    <div class="keylist" id="keyList"></div>
-    <input type="file" id="keyImport" accept=".txt,text/plain" style="display:none">
-  </div>
-
   <div class="group g-text" data-eng="app">
     <h3>Text</h3>
     <div class="wsub">Letter size</div>
@@ -6050,6 +6059,18 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip f-serif" data-font="serif">Serif</button>
       <button class="chip f-mono"  data-font="mono">Mono</button>
     </div>
+  </div>
+
+  <div class="group g-keys" data-eng="app">
+    <div class="gtitle">Keys</div>
+    <div class="chips" style="margin:6px 0">
+      <button class="chip" id="keyPick">Choose .txt key file</button>
+      <button class="chip" id="keyRefresh">Refresh</button>
+    </div>
+    <div class="langhint">One file, any mess. Each key is filed by its own
+      shape; you are never asked which is which.</div>
+    <div class="keylist" id="keyList"></div>
+    <input type="file" id="keyImport" accept=".txt,text/plain" style="display:none">
   </div>
 
   <div class="group g-play" data-eng="app">

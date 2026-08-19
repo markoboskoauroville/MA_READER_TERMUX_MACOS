@@ -104,6 +104,37 @@ painted inside applyEngineCards, which setPane calls and setLang does not, so
 the language changed, the toast fired, and the button went on showing the old
 word. One painter, called by everyone who can change the language.
 
+## Word timing, MEASURED IN THIS REPOSITORY
+
+2py_word_timing_lab.py is the experiment. Speechify returns exact speech marks
+with its audio, so its own rendition is the only ground truth available; Edge
+marks cannot be checked this way because a different voice says the same
+sentence differently. So Speechify audio is the test subject, its marks are
+the truth, and every candidate is handed nothing but the mp3 and the words.
+
+GROUND TRUTH, 80 words over 6 sentences:
+
+    proportional   mean 297 ms   median 204 ms   19% within 50 ms
+    pcm2           mean 329 ms   median 215 ms   10% within 50 ms
+    whisper        mean  80 ms   median  44 ms   56% within 50 ms
+
+That reproduces MAHA_TRANSCRIBE_STREAMLIT's held-out result (79 ms mean, 48 ms
+median) on different sentences and a different voice, which is about as good a
+confirmation as an independent measurement gets.
+
+ON EDGE AUDIO, with Whisper as the yardstick, 53 words:
+
+    edge marks           mean 214 ms   median 87 ms
+    edge marks + pcm2    mean 217 ms   median 92 ms
+
+THE WAVEFORM REFINEMENT WAS TURNED OFF where the engine gives marks. It costs
+a full waveform pass per sentence and buys nothing: three milliseconds worse
+on Edge marks, and worse than plain proportional timing when it starts from a
+flat guess. It is kept for the case it was built for, a clip with no marks at
+all. This reproduces independently what that repo measured (88 against 89 ms)
+and explains itself: there is no acoustic gap at a word boundary to snap to,
+because speech does not stop between words.
+
 ## Word timing: three layers
 
 Ported from MAHA_TRANSCRIBE_STREAMLIT ttt/wordtimes.py. Its docs/WORD_TIMINGS.md
