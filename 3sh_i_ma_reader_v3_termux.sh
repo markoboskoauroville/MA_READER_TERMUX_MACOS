@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.21
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.22
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.21%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.22%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1988,40 +1988,113 @@ GROQ_NOT_CHAT = ("whisper", "orpheus", "prompt-guard", "safeguard", "tts")
 _groq_i = 0
 _groq_err = ""
 _groq_rest = {}          # key fingerprint -> resting until (a 429 is not death)
+_groq_skip = set()       # weak candidates that failed: skipped, never gravestoned
 
 
 def _groq_fp(k):
     return hashlib.sha256(k.encode("utf-8")).hexdigest()[:16]
 
 
-def groq_keys():
-    """Every key in the file, in order. Shape only RANKS, it never discards:
-    providers rebrand key formats without notice."""
-    out = []
+# Key recognition PORTED FROM Key_Tester/KeyParser.kt, which is itself ported
+# from TTT's MaKeys. It is Baba's established parser and this is a faithful
+# translation, not a fresh idea:
+#
+#   TOKEN LEVEL, NOT LINE LEVEL. Each line is split on separators, so quotes,
+#   commas, brackets and equals signs fall away by themselves and several keys
+#   can share a line. That is why a key pasted out of code works.
+#
+#   WHOLE TOKEN CLASSIFICATION, anchored. A gsk_ token is Groq and never a
+#   stray sk_ match inside a longer string.
+#
+#   A LONG KEY-LIKE TOKEN OF AN UNKNOWN SHAPE IS KEPT, not dropped, because
+#   providers rebrand key formats without notice. But it must look like a
+#   credential: 24 characters or more, from the credential alphabet, and
+#   carrying BOTH a letter and a digit. That one test is what rejects prose,
+#   an email address, a URL, a file path and a row of identical letters.
+#
+#   THE LINE ABOVE A KEY IS ITS LABEL, verbatim, when it is not itself a key
+#   line. That is how "Auroville community." names the key beneath it.
+_K_HEX32 = re.compile(r"^[0-9a-fA-F]{32}$")
+_K_GROQ = re.compile(r"^gsk_[0-9A-Za-z_-]{20,}$")
+_K_GOOGLE = re.compile(r"^(AQ\.[0-9A-Za-z._-]{20,}|AIza[0-9A-Za-z_-]{20,})$")
+_K_ANTHROPIC = re.compile(r"^sk-ant-[0-9A-Za-z_-]{20,}$")
+_K_OPENAI = re.compile(r"^sk-(?!ant-)[0-9A-Za-z_-]{20,}$")
+_K_SK_US = re.compile(r"^sk_[0-9A-Za-z_-]{16,}$")
+_K_LOOSE = re.compile(r"^[A-Za-z0-9._-]{24,220}$")
+_K_SEP = re.compile(r"[\s,;:\"'=|\[\](){}<>]+")
+
+
+def key_classify(tok):
+    """Which provider does this token belong to, or None if it is not a key."""
+    if not tok:
+        return None
+    if _K_ANTHROPIC.match(tok): return "anthropic"
+    if _K_GOOGLE.match(tok):    return "gemini"
+    if _K_GROQ.match(tok):      return "groq"
+    if _K_SK_US.match(tok):     return "speechify" if len(tok) >= 44 else "elevenlabs"
+    if _K_OPENAI.match(tok):    return "openai"
+    if _K_HEX32.match(tok):     return "assemblyai"
+    if _K_LOOSE.match(tok):
+        has_d = any(c.isdigit() for c in tok)
+        has_a = any(c.isalpha() for c in tok)
+        if has_d and has_a:
+            return "unknown"
+    return None
+
+
+def key_extract(text, want=None):
+    """Every key in the text, in order, each with the label line above it.
+
+    Returns a list of dicts: {key, provider, label}. De-duped by key, keeping
+    the first appearance and its label."""
+    lines = (text or "").split("\n")
+
+    def line_has_key(line):
+        for t in _K_SEP.split(line):
+            if key_classify(t.strip().strip(".-_")):
+                return True
+        return False
+
+    out, seen = [], set()
+    for i, line in enumerate(lines):
+        label = ""
+        if i > 0:
+            prev = lines[i - 1].strip()
+            if prev and not line_has_key(prev):
+                label = prev
+        for rawtok in _K_SEP.split(line):
+            t = rawtok.strip().strip(".-_")
+            if not t or t == "DELETED" or t in seen:
+                continue
+            pid = key_classify(t)
+            if not pid:
+                continue
+            if want and pid not in (want, "unknown"):
+                continue
+            seen.add(t)
+            out.append({"key": t, "provider": pid, "label": label})
+    return out
+
+
+def groq_entries():
+    """Groq candidates, strongest first. A gsk_ token is STRONG and a failure
+    on it means a dead key. An unknown token is WEAK: it is still tried, since
+    the next key format has not been invented yet, but a failure on it is
+    skipped for the session rather than carved into the gravestone list."""
     try:
         raw = open(GROQ_KEYFILE, encoding="utf-8", errors="replace").read()
     except Exception:
-        return out
-    for line in raw.splitlines():
-        t = line.strip()
-        # A key file is often pasted out of code, so a key can arrive wrapped
-        # in quotes and trailed by a comma. Baba's own file holds every key
-        # twice, once bare and once quoted; without this the quoted copies
-        # look like five extra keys that all fail to authenticate.
-        t = t.strip().rstrip(",").strip()
-        if len(t) >= 2 and t[0] in "\"'" and t[-1] == t[0]:
-            t = t[1:-1].strip()
-        if not t or t.startswith("#") or t == "[DELETED]":
-            continue
-        if len(t) < 20 or " " in t:
-            continue
-        out.append(t)
-    out.sort(key=lambda k: 0 if k.startswith("gsk_") else 1)
-    seen, uniq = set(), []
-    for k in out:
-        if k not in seen:
-            seen.add(k); uniq.append(k)
-    return uniq
+        return []
+    found = key_extract(raw, want="groq")
+    strong = [f for f in found if f["provider"] == "groq"]
+    weak = [f for f in found if f["provider"] != "groq"]
+    for f in strong: f["strong"] = True
+    for f in weak: f["strong"] = False
+    return strong + weak
+
+
+def groq_keys():
+    return [e["key"] for e in groq_entries()]
 
 
 def groq_dead():
@@ -2044,8 +2117,10 @@ def groq_condemn(key, reason):
 
 def groq_live():
     dead = groq_dead(); now = time.time()
-    return [k for k in groq_keys()
-            if _groq_fp(k) not in dead and _groq_rest.get(_groq_fp(k), 0) < now]
+    return [e for e in groq_entries()
+            if _groq_fp(e["key"]) not in dead
+            and e["key"] not in _groq_skip
+            and _groq_rest.get(_groq_fp(e["key"]), 0) < now]
 
 
 def groq_call(path, payload=None, timeout=45, tries=None):
@@ -2055,7 +2130,7 @@ def groq_call(path, payload=None, timeout=45, tries=None):
     global _groq_i, _groq_err
     live = groq_live()
     if not live:
-        return None, ("every Groq key is resting or dead" if groq_keys()
+        return None, ("every Groq key is resting or dead" if groq_entries()
                       else "no Groq key")
     tries = tries if tries is not None else min(len(live), 4)
     last = "no Groq key"
@@ -2063,7 +2138,8 @@ def groq_call(path, payload=None, timeout=45, tries=None):
         live = groq_live()
         if not live:
             return None, last
-        key = live[_groq_i % len(live)]
+        ent = live[_groq_i % len(live)]
+        key = ent["key"]
         try:
             data = json.dumps(payload).encode("utf-8") if payload is not None else None
             req = urllib.request.Request(GROQ_API + path, data=data)
@@ -2085,9 +2161,15 @@ def groq_call(path, payload=None, timeout=45, tries=None):
                     # the User-Agent was refused, not the key. Condemning here
                     # would wipe the whole ring for a header mistake.
                     last = "Groq refused the request shape, not the key"
-                else:
+                elif ent.get("strong"):
                     groq_condemn(key, "HTTP %d" % e.code)
                     last = "a Groq key was rejected and marked dead"
+                else:
+                    # almost certainly a long word out of the file rather than
+                    # a credential. Skip it for the session; do not gravestone
+                    # something that was never a key.
+                    _groq_skip.add(key)
+                    last = "a token that was not a key was skipped"
             elif e.code == 429:
                 _groq_rest[_groq_fp(key)] = time.time() + 300
                 last = "Groq is rate limiting; resting that key"
@@ -3805,10 +3887,16 @@ def api_preview_hr(vid):
 
 @app.route("/api/groq/status")
 def api_groq_status():
-    keys = groq_keys(); dead = groq_dead()
-    live = [k for k in keys if _groq_fp(k) not in dead]
+    ents = groq_entries(); dead = groq_dead()
+    strong = [e for e in ents if e.get("strong")]
+    live = [e for e in strong if _groq_fp(e["key"]) not in dead]
+    # The count reports REAL keys. A weak candidate that turned out to be a
+    # word from the file is not a dead key and is not counted as one.
     return jsonify({
-        "total": len(keys), "live": len(live), "dead": len(keys) - len(live),
+        "total": len(strong), "live": len(live),
+        "dead": len(strong) - len(live),
+        "extra": len(ents) - len(strong),
+        "labels": [e.get("label", "") for e in strong],
         "model": groq_model_saved(), "err": _groq_err,
     })
 
@@ -5589,7 +5677,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.21 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.22 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 

@@ -133,6 +133,24 @@ English and mangling a Croatian page. Text with fewer than eight letters is
 never sent at all: a model asked whether 12345 is English says no, quite
 correctly, and no here would mean Croatian.
 
+THE PARSER IS A PORT of Key_Tester/KeyParser.kt, which is itself ported from
+TTT's MaKeys. It is line-aware and token-level: each line is split on
+separators so quotes, commas and brackets fall away and a key pasted out of a
+line of code still works; each WHOLE token is classified with anchored
+regexes; and the line above a key becomes its label, verbatim, which is how
+"Auroville community." names the key beneath it.
+
+A long token of an unknown shape is KEPT, because the next key format has not
+been invented yet, but only if it carries BOTH a letter and a digit within 24
+to 220 characters of the credential alphabet. That single test is what rejects
+prose, an email address, a URL, a file path and a row of identical letters.
+
+STRONG AND WEAK. A gsk_ token is strong: a 401 on it means the key is dead and
+it is gravestoned. An unknown token is weak: it is still tried, but a failure
+skips it for the session rather than carving it into the dead list, and it is
+never counted in the dead total. Without this, a file with a comment line in
+it would report six dead keys that were never keys.
+
 Keys arrive by FILE PICKER, never typed, written 0600, never echoed. The dead
 list stores SHA-256 fingerprints, never keys. 401/403 condemns, 429 rests the
 key five minutes. Keys can arrive wrapped in quotes and trailing commas from

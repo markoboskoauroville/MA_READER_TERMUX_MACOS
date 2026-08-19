@@ -156,6 +156,32 @@ server will quietly disagree with the app about what is legal.
 
 ---
 
+## 2c. Read his other repositories before inventing anything
+
+Baba has more than 28 repositories and has ALREADY SOLVED most of the
+recurring problems, usually better than a fresh idea will.
+
+Before designing any parser, key ring, provider client, terminal screen,
+installer menu or other shared mechanism: SEARCH HIS REPOS FIRST with the
+GitHub API, read the existing implementation, and PORT it faithfully. Say in
+the commit that it is a port and name the source.
+
+Where the solved problems live:
+
+    Key_Tester/.../KeyParser.kt   THE key parser, itself ported from TTT's
+                                  MaKeys. Every app of his uses this shape.
+    KEYRING                       encrypted vault, GitHub sync, biometric gate
+    TTT_MINI                      Groq usage, Android keyboard patterns
+    MA_READER_SPEECHIFY           SERVER_SCREEN.md, the terminal screen spec
+    ma-reader-thermux             the Speechify key ring, these rules
+
+This rule was written on 19.8.2026 after I built a Groq key parser from
+scratch that kept a URL, an email address, a file path and a row of identical
+letters, and would have gravestoned all four as dead keys. The correct parser
+already existed in his own repository and had for months.
+
+---
+
 ## 3. One spoon at a time
 
 Spoon equals step.
