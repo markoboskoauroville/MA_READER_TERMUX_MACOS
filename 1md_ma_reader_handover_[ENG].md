@@ -279,9 +279,26 @@ A Croatian seat is not a catalogue voice; it never becomes ST.voice. It is a
 choice of WHICH foreign voice reads Croatian, stored as croVoice, and
 voiceIsCurrent answers for it separately.
 
-The per-sentence rule underneath is unchanged: a mixed document still switches
-voice sentence by sentence whatever this switch says. The switch decides what
-is OFFERED, not what a Croatian sentence gets.
+THE SWITCH IS THE AUTHORITY. Only AUTO is automatic; that is the whole point
+of having three settings rather than two.
+
+    ENG    the English voice, always, even on a Croatian page
+    HR     the Croatian voice, always, even on an English page
+    AUTO   whatever Groq decided, applied to the whole text
+
+reading_lang() answers that question in one place and everything else asks it:
+which voice speaks, which model it is asked for, and which language Whisper is
+told when it times the words.
+
+This was wrong until v3.27. sp_voice_for asked looks_croatian about every
+sentence no matter what the switch said, so ENG quietly handed Croatian
+sentences to the Croatian voice and a person who had pressed ENG was overruled
+by a guess. looks_croatian now serves one purpose only: the local fallback for
+AUTO when Groq cannot be reached.
+
+A consequence worth knowing: a document that mixes the two languages is read
+in ONE voice, chosen by the switch, rather than switching sentence by
+sentence. That is the price of the switch meaning what it says.
 
 ### Croatian
 

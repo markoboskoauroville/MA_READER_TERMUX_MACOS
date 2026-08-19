@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.26
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.27
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.26%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.27%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2776,12 +2776,34 @@ def cro_voice_id():
     return v if any(c["id"] == v for c in CRO_VOICES) else CRO_DEFAULT
 
 
+def reading_lang():
+    """Which language the app is reading, resolved to eng or hr.
+
+    THE SWITCH IS THE AUTHORITY. Only AUTO is automatic; that is the whole
+    point of having three settings rather than two. ENG means English even
+    when the page is Croatian, because a person who has pressed ENG has said
+    what they want and being overruled by a guess is not help.
+    """
+    st = load_state()
+    mode = st.get("lang", "eng")
+    if mode == "hr":
+        return "hr"
+    if mode == "eng":
+        return "eng"
+    return "hr" if st.get("langAuto") == "hr" else "eng"
+
+
 def sp_voice_for(text, voice_id):
     """Which voice and which model this sentence should be spoken with.
 
     The pairing matters as much as the choice: a voice asked for on a model
-    that does not carry it returns an error, not a fallback."""
-    if looks_croatian(text):
+    that does not carry it returns an error, not a fallback.
+
+    This used to ask looks_croatian about every sentence no matter what the
+    switch said, so ENG quietly handed Croatian sentences to the Croatian
+    voice. The switch decides; the text does not get a vote unless the switch
+    has handed it one by being set to AUTO."""
+    if reading_lang() == "hr":
         return cro_voice_id(), SP_MODEL_MULTI
     return voice_id, SP_MODEL
 SP_PAGE = 200                 # the API caps a page here; default is only 50
@@ -4486,14 +4508,13 @@ def api_bounds(tid, vkey, idx):
             # Telling Whisper the language measurably improves its word
             # timings. The voice knows it; the app's own setting is the
             # fallback, and AUTO resolves to whatever it last decided.
+            # An Edge voice knows its own language; a Speechify voice does
+            # not, so the switch answers for it. Same authority either way.
             lang = VKEY_LANG.get(vkey)
-            lang = "hr" if lang == "hr" else ("en" if lang else None)
-            if lang is None:
-                _st = load_state()
-                _l = _st.get("lang")
-                if _l == "auto":
-                    _l = _st.get("langAuto", "eng")
-                lang = "hr" if _l == "hr" else "en"
+            if lang:
+                lang = "hr" if lang == "hr" else "en"
+            else:
+                lang = "hr" if reading_lang() == "hr" else "en"
             wt_apply(mp3, js, language=lang)
         except Exception:
             pass
@@ -5842,7 +5863,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.26 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.27 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
