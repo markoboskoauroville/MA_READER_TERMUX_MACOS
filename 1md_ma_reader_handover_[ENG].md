@@ -104,6 +104,40 @@ painted inside applyEngineCards, which setPane calls and setLang does not, so
 the language changed, the toast fired, and the button went on showing the old
 word. One painter, called by everyone who can change the language.
 
+## Word timing: three layers
+
+Ported from MAHA_TRANSCRIBE_STREAMLIT ttt/wordtimes.py. Its docs/WORD_TIMINGS.md
+carries the measurements and the failed approaches and should be read before
+changing any of this.
+
+    1  engine marks          Edge WordBoundary, Speechify speech marks
+    2  Whisper timestamps    groq whisper-large-v3-turbo, median 48 ms
+    3  proportional          always available, median 119 ms
+
+The counter-intuitive parts, so nobody rebuilds them: speech has NO silence
+between words (99.2 per cent of inter-word intervals measure exactly zero), so
+hunting for boundaries in the amplitude envelope finds stop consonants instead
+of words; and snapping anchors to low-energy frames afterwards measured 88 ms
+against 89 ms unrefined, which is no improvement at all.
+
+Layer 2 runs when the bounds are asked for, which is the moment before the
+sentence is read. It is paid for ONCE per sentence per voice: the answer is
+written into the same json the highlight already reads, so a re-read costs
+nothing, and a wt_tried flag means even a failure is never retried. The
+language is told to Whisper, taken from the voice, falling back to the app's
+setting and resolving AUTO through whatever it last decided.
+
+THE GATE, which is this app's addition to the method. The reference assumes
+the call either works or fails. It can do a third thing: come back looking
+well formed and be WRONG. Whisper can mishear a whole clip, or return times
+that run backwards, and the interpolation then produces a smooth ramp of
+nonsense or a row of identical numbers, freezing the highlight on one word for
+a whole sentence. So an answer must earn its place on three counts: at least
+half the displayed words actually matched, the times actually move across the
+clip, and no start lies beyond the audio. Anything else is refused and the
+engine marks are kept. Both failures were seen in testing before the gate was
+written.
+
 ## One picker, and the router behind it
 
 ONE file picker for the whole app, at the top of Settings. A key file is a

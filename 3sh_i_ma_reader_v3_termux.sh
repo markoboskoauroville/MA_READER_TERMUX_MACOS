@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.23
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.24
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.23%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.24%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -925,7 +925,7 @@ highlighted sentence stays lit when playback is paused or stopped.
 
 The library lives at ~/.maread/library, shared with the terminal app.
 """
-import os, re, json, time, shutil, threading, asyncio, base64, hashlib
+import os, re, json, time, shutil, threading, asyncio, base64, hashlib, uuid
 import struct, subprocess, urllib.request, urllib.error, urllib.parse
 from flask import (Flask, request, jsonify, send_file, abort,
                    send_from_directory)
@@ -2180,6 +2180,291 @@ def groq_call(path, payload=None, timeout=45, tries=None):
 
 
 
+
+# ===========================================================================
+# WORD TIMING, LAYER 2: WHISPER WORD TIMESTAMPS
+#
+# Ported from MAHA_TRANSCRIBE_STREAMLIT ttt/wordtimes.py. The method, its
+# measurements and the approaches that FAILED are written up in that repo's
+# docs/WORD_TIMINGS.md and are worth reading before changing anything here.
+# The counter-intuitive parts, so nobody rebuilds them:
+#
+#   * Speech has NO silence between words. Measured against exact engine
+#     marks, 99.2 per cent of inter-word intervals are exactly zero. Hunting
+#     for word boundaries in the amplitude envelope is hunting for something
+#     that is not there; it finds stop consonants instead.
+#   * Snapping anchors to low-energy frames afterwards measured 88 ms against
+#     89 ms unrefined. No improvement, and wider windows made it worse. This
+#     follows directly from the point above.
+#   * What works is a recogniser used purely as a MEASURING INSTRUMENT. The
+#     transcript is thrown away except as a key for alignment. Median error
+#     48 ms against 119 ms for proportional timing.
+#   * The hard part is not the timing, it is MAPPING what was heard onto what
+#     is on screen. Whisper writes "12%" where the text says "12 percent" and
+#     "1," where it says "One". That is a sequence alignment.
+#
+# THIS CODE NEVER RAISES. A highlight is a courtesy; the audio is the point.
+# Every failure falls through to the layer below.
+WT_MODEL = "whisper-large-v3-turbo"
+WT_ENDPOINT = "/audio/transcriptions"
+_WT_ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+            "eight", "nine", "ten", "eleven", "twelve"]
+
+
+def wt_fetch(mp3_path, language=None, model=WT_MODEL, timeout=90):
+    """[{'word','start','end'}] from Groq, or None. Carried by the key ring.
+
+    response_format MUST be verbose_json and the granularity parameter MUST
+    be sent with its literal square brackets. With anything else the reply
+    arrives looking perfectly fine and carrying no timings at all.
+    """
+    try:
+        data = open(mp3_path, "rb").read()
+    except Exception:
+        return None
+    if not data:
+        return None
+
+    def one_call(key):
+        b = uuid.uuid4().hex
+        fields = {"model": model, "response_format": "verbose_json",
+                  "timestamp_granularities[]": "word"}
+        if language:
+            fields["language"] = language
+        body = b""
+        for k, v in fields.items():
+            body += ("--%s\r\nContent-Disposition: form-data; name=\"%s\""
+                     "\r\n\r\n%s\r\n" % (b, k, v)).encode("utf-8")
+        body += ("--%s\r\nContent-Disposition: form-data; name=\"file\"; "
+                 "filename=\"audio.mp3\"\r\nContent-Type: "
+                 "application/octet-stream\r\n\r\n" % b).encode("utf-8")
+        body += data + b"\r\n" + ("--%s--\r\n" % b).encode("utf-8")
+        req = urllib.request.Request(GROQ_API + WT_ENDPOINT, data=body)
+        req.add_header("Authorization", "Bearer " + key)
+        req.add_header("User-Agent", GROQ_UA)       # never remove this
+        req.add_header("Content-Type",
+                       "multipart/form-data; boundary=%s" % b)
+        raw = urllib.request.urlopen(req, timeout=timeout).read()
+        return json.loads(raw.decode("utf-8", "replace"))
+
+    out = None
+    for ent in groq_live()[:3]:
+        try:
+            out = one_call(ent["key"])
+            break
+        except urllib.error.HTTPError as e:
+            txt = ""
+            try:
+                txt = e.read()[:120].decode("utf-8", "replace")
+            except Exception:
+                pass
+            if e.code in (401, 403) and not ("1010" in txt
+                                             or "cloudflare" in txt.lower()):
+                if ent.get("strong"):
+                    groq_condemn(ent["key"], "HTTP %d" % e.code)
+                else:
+                    _groq_skip.add(ent["key"])
+            elif e.code == 429:
+                _groq_rest[_groq_fp(ent["key"])] = time.time() + 300
+            continue
+        except Exception:
+            continue
+    if not out:
+        return None
+    words = out.get("words")
+    if not words:
+        return None
+    clean = []
+    for w in words:
+        try:
+            if w.get("start") is None:
+                continue
+            clean.append({"word": str(w.get("word", "")),
+                          "start": float(w["start"]),
+                          "end": float(w.get("end", w["start"]))})
+        except Exception:
+            continue
+    return clean or None
+
+
+def wt_norm(tok):
+    """See through the spelling differences that break the alignment.
+
+    Whisper writes digits where the text has words and the reverse, so
+    without this every numeral is a mismatch and drags the alignment out of
+    step for the rest of the sentence."""
+    t = re.sub(r"[^\w]", "", str(tok).lower(), flags=re.UNICODE)
+    if t.isdigit() and len(t) <= 2 and int(t) < len(_WT_ONES):
+        return _WT_ONES[int(t)]
+    return t
+
+
+def wt_align(heard, words):
+    """Needleman-Wunsch. Per displayed word, the heard index or None."""
+    n, m = len(words), len(heard)
+    if not n or not m:
+        return [None] * n
+    a = [wt_norm(w) for w in words]
+    b = [wt_norm(h.get("word", "")) for h in heard]
+    GAP = -1.0
+    sc = [[0.0] * (m + 1) for _ in range(n + 1)]
+    bk = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        sc[i][0] = i * GAP; bk[i][0] = 1
+    for j in range(1, m + 1):
+        sc[0][j] = j * GAP; bk[0][j] = 2
+    for i in range(1, n + 1):
+        ai = a[i - 1]
+        for j in range(1, m + 1):
+            bj = b[j - 1]
+            if ai and ai == bj:
+                s = 2.0
+            elif ai and bj and (ai.startswith(bj) or bj.startswith(ai)):
+                s = 1.0                      # 'people' inside '3,500 people'
+            else:
+                s = -1.0
+            diag = sc[i - 1][j - 1] + s
+            up = sc[i - 1][j] + GAP
+            left = sc[i][j - 1] + GAP
+            best = diag if diag >= up and diag >= left else (
+                up if up >= left else left)
+            sc[i][j] = best
+            bk[i][j] = 0 if best == diag else (1 if best == up else 2)
+    out = [None] * n
+    i, j = n, m
+    while i > 0 and j > 0:
+        d = bk[i][j]
+        if d == 0:
+            out[i - 1] = j - 1; i -= 1; j -= 1
+        elif d == 1:
+            i -= 1
+        else:
+            j -= 1
+    return out
+
+
+def wt_times(heard, words, total=None):
+    """One (start, end) per displayed word, or None."""
+    if not heard or not words:
+        return None
+    idx = wt_align(heard, words)
+    if all(j is None for j in idx):
+        return None
+    starts = [None] * len(words)
+    for i, j in enumerate(idx):
+        if j is not None:
+            try:
+                starts[i] = float(heard[j].get("start"))
+            except Exception:
+                starts[i] = None
+    if all(s is None for s in starts):
+        return None
+    if starts[0] is None:
+        starts[0] = 0.0
+    if starts[-1] is None:
+        starts[-1] = max(s for s in starts if s is not None)
+    # Interpolate anything unmatched. A word with no time would freeze the
+    # highlight, which reads as worse than being slightly early.
+    i = 0
+    while i < len(words):
+        if starts[i] is not None:
+            i += 1; continue
+        j = i
+        while j < len(words) and starts[j] is None:
+            j += 1
+        left = starts[i - 1] if i > 0 else 0.0
+        right = starts[j] if j < len(words) else (total or left)
+        for k in range(i, j):
+            starts[k] = left + (right - left) * (k - i + 1) / (j - i + 1)
+        i = j
+    # Monotonic, always. A highlight that jumps backwards is a bug the reader
+    # sees instantly.
+    for i in range(1, len(starts)):
+        if starts[i] < starts[i - 1]:
+            starts[i] = starts[i - 1]
+    try:
+        last_end = float(heard[-1].get("end") or starts[-1])
+    except Exception:
+        last_end = starts[-1]
+    ends = starts[1:] + [max(starts[-1], total or last_end)]
+    return list(zip(starts, ends))
+
+
+def wt_sane(heard, words, times, total):
+    """Is this answer worth believing?
+
+    The reference method assumes the call either works or fails. It can do a
+    third thing: come back looking perfectly well formed and be WRONG. Whisper
+    can mishear a whole clip, or hand back times that run backwards, and the
+    interpolation then dutifully produces a smooth ramp of nonsense or a row
+    of identical numbers. A highlight frozen on the first word for a whole
+    sentence is worse than the engine marks it replaced.
+
+    So the answer has to earn its place on three counts. Every one of them was
+    written after watching this exact failure in a test.
+    """
+    n = len(words)
+    if n == 0 or not times:
+        return False
+
+    # 1. ENOUGH OF IT WAS ACTUALLY RECOGNISED. If barely any displayed word
+    #    found a partner, the times are almost all interpolated guesses
+    #    dressed up as measurements.
+    idx = wt_align(heard, words)
+    matched = sum(1 for j in idx if j is not None)
+    need = 2 if n <= 3 else max(2, int(n * 0.5))
+    if matched < need:
+        return False
+
+    # 2. IT MUST MOVE. Times that all collapse onto one another freeze the
+    #    highlight; that is the shape of a backwards answer after it has been
+    #    forced monotonic.
+    starts = [a for a, _ in times]
+    spread = starts[-1] - starts[0]
+    if total and total > 0.4 and spread < total * 0.25:
+        return False
+
+    # 3. IT MUST FIT THE CLIP. A start beyond the end of the audio means the
+    #    recogniser was describing something else.
+    if total and total > 0 and starts[-1] > total * 1.5:
+        return False
+    return True
+
+
+def wt_apply(mp3_path, json_path, language=None):
+    """Re-time an already-spoken clip from Whisper, and remember the result.
+
+    Paid for ONCE per sentence per voice: the answer is written into the same
+    json the highlight already reads, so a re-read costs nothing. Returns
+    True if the clip was re-timed."""
+    try:
+        d = json.load(open(json_path, encoding="utf-8"))
+    except Exception:
+        return False
+    if d.get("engine") == "whisper" or d.get("wt_tried"):
+        return False
+    toks = d.get("tokens") or []
+    words = [t.get("w", "") for t in toks]
+    if not words:
+        return False
+    heard = wt_fetch(mp3_path, language=language)
+    d["wt_tried"] = True                    # never pay for the same clip twice
+    if heard:
+        t = wt_times(heard, words, d.get("total"))
+        if t and len(t) == len(toks) and wt_sane(heard, words, t, d.get("total")):
+            for tok, (a, b) in zip(toks, t):
+                tok["t"] = round(float(a), 3)
+                tok["d"] = round(max(0.01, float(b) - float(a)), 3)
+            d["tokens"] = toks
+            d["engine"] = "whisper"
+    try:
+        tmp = json_path + ".part"
+        json.dump(d, open(tmp, "w", encoding="utf-8"), ensure_ascii=False)
+        os.replace(tmp, json_path)
+    except Exception:
+        return False
+    return d.get("engine") == "whisper"
+
 # ---------------------------------------------------------------------------
 # THE KEY ROUTER
 #
@@ -3096,7 +3381,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "floatPaste": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
-                  "croVoice": "lesya", "lang": "eng", "langAuto": "eng",
+                  "croVoice": "lesya", "lang": "eng", "langAuto": "eng", "wtime": True,
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 13, "focus": False,
@@ -3159,6 +3444,7 @@ def load_state():
     # A font or a pane that no longer exists must not survive on disk. The
     # client copes with either, but a stored value nobody recognises is a
     # small lie that outlives the release that made it.
+    st["wtime"] = bool(st.get("wtime", True))
     if st.get("lang") not in ("eng", "hr", "auto"):
         st["lang"] = "eng"
     if st.get("langAuto") not in ("eng", "hr"):
@@ -4169,6 +4455,27 @@ def api_bounds(tid, vkey, idx):
     mp3, js, err = ensure_unit(tid, vkey, idx)
     if err:
         return jsonify({"error": err}), 400
+    # LAYER 2. The clip exists and is about to be read, so this is the moment
+    # to ask Whisper where the words actually fall. Paid for once per sentence
+    # per voice: the answer is written into this same json. If there is no key,
+    # no network, or no answer, the engine's own marks stay exactly as they
+    # were and nothing is lost but precision.
+    if load_state().get("wtime", True) and groq_live():
+        try:
+            # Telling Whisper the language measurably improves its word
+            # timings. The voice knows it; the app's own setting is the
+            # fallback, and AUTO resolves to whatever it last decided.
+            lang = VKEY_LANG.get(vkey)
+            lang = "hr" if lang == "hr" else ("en" if lang else None)
+            if lang is None:
+                _st = load_state()
+                _l = _st.get("lang")
+                if _l == "auto":
+                    _l = _st.get("langAuto", "eng")
+                lang = "hr" if _l == "hr" else "en"
+            wt_apply(mp3, js, language=lang)
+        except Exception:
+            pass
     try:
         data = json.load(open(js, encoding="utf-8"))
     except Exception:
@@ -5514,7 +5821,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.23 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.24 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
