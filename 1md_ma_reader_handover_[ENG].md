@@ -95,9 +95,15 @@ either row moves the engine to match it.
 
 ### The reading language
 
-A two-half switch, ENG and HR, sits beside the three tabs at the top of
-Settings. It says which language the app is reading, and everything follows
-from it.
+ONE button beside the three tabs at the top of Settings, the same size and
+shape as them. It shows the language IN FORCE, ENG or HR, and pressing it
+flips to the other. It is always lit, because it names a state rather than a
+destination.
+
+It was a split control with two halves. That put two small zones where one
+whole button belongs, and half of it was always the wrong half to press.
+
+It says which language the app is reading, and everything follows from it.
 
     ENG   Edge offers Sonia and Ryan; Speechify offers the ticked voices
     HR    Edge offers Gabrijela and Srecko; Speechify offers the Croatian

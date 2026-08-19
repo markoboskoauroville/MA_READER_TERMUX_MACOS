@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.19
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.20
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.19%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.20%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -4922,14 +4922,10 @@ body.hassession .tab.player{display:block}
    simply not there while the other is chosen. Anything unmarked - speed, the
    pauses, the text, the colours - belongs to both and always shows. */
 .engtabs{display:flex; gap:8px; margin:2px 0 14px; align-items:stretch}
-/* Two halves of one switch, so it reads as a single choice rather than two
-   buttons that might both be off. */
-.langtog{flex:0 0 auto; display:flex; border:1px solid var(--line);
-  border-radius:12px; overflow:hidden; background:var(--panel)}
-.langtog .lt{border:none; background:transparent; color:var(--faint);
-  font-size:11px; font-weight:700; letter-spacing:.06em; padding:0 11px}
-.langtog .lt.on{background:color-mix(in srgb, var(--tune) 20%, transparent);
-  color:var(--text)}
+/* The language button is an engtab like the others, but it names a state
+   rather than a destination, so it is always lit. */
+#langBtn{flex:0 0 auto; min-width:64px}
+#langBtn.on b{letter-spacing:.06em}
 .engtab{flex:1; border:1px solid var(--line); background:var(--panel);
   color:var(--dim); border-radius:13px; padding:11px 8px 9px; text-align:center;
   line-height:1.25}
@@ -5275,7 +5271,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.19 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.20 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5417,11 +5413,12 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <button class="engtab" data-pane="app"><b>Settings</b></button>
     <!-- Which language the app is reading. Everything else follows from it:
          which voices appear at the top, which appear in the grids, and which
-         voice a fresh choice lands on. -->
-    <div class="langtog" id="langTog">
-      <button class="lt" data-lang="eng">ENG</button>
-      <button class="lt" data-lang="hr">HR</button>
-    </div>
+         voice a fresh choice lands on.
+         ONE button, the same size as its neighbours, showing the language in
+         force. Pressing it flips to the other. A split control put two small
+         zones where one whole button belongs, and half of it was always the
+         wrong half to press. -->
+    <button class="engtab" id="langBtn"><b>ENG</b></button>
   </div>
 
 
@@ -6113,8 +6110,13 @@ function applyEngineCards(){
   const pane = ST.pane || ST.engine || "edge";
   document.querySelectorAll("#engTabs .engtab").forEach(b=>
     b.classList.toggle("on", b.dataset.pane === pane));
-  document.querySelectorAll("#langTog .lt").forEach(b=>
-    b.classList.toggle("on", b.dataset.lang === (ST.lang || "eng")));
+  { const lb = $("#langBtn");
+    if(lb){
+      lb.classList.add("on");            /* always lit: it is a state, not a tab */
+      lb.innerHTML = "<b>" + (ST.lang === "hr" ? "HR" : "ENG") + "</b>";
+      lb.title = (ST.lang === "hr") ? "Reading Croatian. Tap for English."
+                                    : "Reading English. Tap for Croatian.";
+    } }
   document.querySelectorAll("#sheet .group[data-eng]").forEach(g=>{
     g.style.display = (g.dataset.eng === pane) ? "" : "none";
   });
@@ -8073,8 +8075,8 @@ function bind(){
   /* the two engine buttons at the top of Settings */
   document.querySelectorAll("#engTabs .engtab").forEach(b=>{
     b.onclick = ()=> setPane(b.dataset.pane);
-  document.querySelectorAll("#langTog .lt").forEach(b=>{
-    b.onclick = ()=> setLang(b.dataset.lang); });
+  { const lb = $("#langBtn");
+    if(lb) lb.onclick = ()=> setLang(ST.lang === "hr" ? "eng" : "hr"); }
   });
   /* the Speechify key ring. The file is handed straight to the server; the
      browser reads no key out of it and nothing is ever echoed back. */
