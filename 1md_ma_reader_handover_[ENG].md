@@ -629,6 +629,23 @@ scroll, and someone listening should not have to be careful where he touches.
 Tapping the sentence already playing now restarts it; the player bar pauses.
 Gone from the client, the page, the Help text, the chips and the server state.
 
+## A finished text starts again
+
+Press play on a text that has reached its end and it starts from the FIRST
+sentence, not the last one. Once the end is reached that is the only reading
+of the button that makes sense.
+
+A FLAG, not an inference. "On the last sentence and its audio has ended" is
+also true after a deliberate jump to the last sentence, and those two
+situations deserve different answers. atEnd is raised when the last sentence
+ends, and cleared by any start, any jump, and any new text.
+
+Stop deliberately does NOT clear it: stopping a text that has already finished
+leaves it finished, so play still starts from the top.
+
+Loop still wins. When loop is on the end never arrives, so the flag is never
+raised. The offline reader carries the same flag under OFF.atEnd.
+
 ## The teleprompter rule
 
 EVERY sentence begins at the top of the screen. Not only when it has wandered

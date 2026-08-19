@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.25
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.26
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.25%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.26%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -5842,7 +5842,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.25 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.26 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -8006,6 +8006,7 @@ function loadBounds(i){
 
 /* ---------- core playback ---------- */
 function startAt(i, viaHandoff){
+  atEnd = false;
   stopOffline();
   cancelGap(); wgReset(WG); i = clampIdx(i);
   let el;
@@ -8037,6 +8038,13 @@ function startAt(i, viaHandoff){
   if(!rafId) rafId = requestAnimationFrame(follow);
   setStatus("");
 }
+/* A text that has finished is FINISHED. Pressing play on it starts the text
+   again from the beginning rather than replaying the last sentence, which is
+   the only reading of the button that makes sense once the end is reached.
+   A FLAG rather than an inference: "on the last sentence and its audio has
+   ended" is also true after a deliberate jump to the last sentence, and those
+   two situations deserve different answers. */
+let atEnd = false;
 function onEnded(i, seq){
   if(!ST.playing) return;
   if(seq !== playSeq) return;   /* an overlapped predecessor finishing: ignore */
@@ -8044,6 +8052,7 @@ function onEnded(i, seq){
   const ni = i + 1;
   if(ni >= ST.sentences.length){
     if(ST.loop){ startAt(0); return; }
+    atEnd = true;
     ST.playing = false; setPlayIcon(false); highlight(i, true);
     setStatus("Finished."); return;
   }
@@ -8057,6 +8066,7 @@ function cancelGap(){ if(gapTimer){ clearTimeout(gapTimer); gapTimer=null; } }
 
 function resume(){
   stopOffline();
+  if(atEnd){ atEnd = false; jumpTo(0, true); return; }
   const el = active();
   if(el.src && el.currentTime>0 && !el.ended){
     ST.playing = true; setPlayIcon(true); highlight(ST.idx, false);
@@ -8073,6 +8083,8 @@ function pause(){
 }
 function togglePlay(){ if(ST.playing) pause(); else resume(); }
 function stop(){
+  /* deliberately NOT clearing atEnd: stopping a text that has already
+     finished leaves it finished, so play still starts it again from the top */
   cancelGap(); ST.playing = false; setPlayIcon(false);
   players.forEach(p=>{ try{ p.pause(); p.currentTime=0; }catch(e){} });
   highlight(ST.idx, true); clearWords(ST.idx);
@@ -8080,6 +8092,7 @@ function stop(){
   setStatus("Stopped.");
 }
 function jumpTo(i, play){
+  atEnd = false;
   i = clampIdx(i); ST.idx = i; cancelGap();
   handedOff = false; armed = { slot:-1, idx:-1 };
   if(play){ startAt(i); }
@@ -9666,6 +9679,7 @@ function setOffStatus(s){ $("#offStatus").textContent=s||""; }
 
 /* Light up the whole sentence FIRST, then load and play its clip. */
 function offPlaySentence(i, viaHandoff){
+  OFF.atEnd = false;
   offCancelGap(); wgReset(OWG);
   OFF.idx = clampOff(i);
   offClearWords(OFF.idx);
@@ -9703,6 +9717,7 @@ function offEnded(){
     return;
   }
   if(ST.loop){ offPlaySentence(0); return; }
+  OFF.atEnd = true;
   OFF.playing=false; offSetPlayIcon(false);
   offHighlightSentence(OFF.idx,true); offSetSeek();
   if(ST.resume) saveOffPos(); setOffStatus("Finished.");
@@ -9710,6 +9725,7 @@ function offEnded(){
 function offPlay(){
   if(!OFF.man) return;
   stopOnline();
+  if(OFF.atEnd){ OFF.atEnd = false; offPlaySentence(0); return; }
   OFF.playing=true; offSetPlayIcon(true); setOffStatus("");
   /* resume the same clip if we paused mid-sentence, else start it fresh */
   if(OFF.audio.src && OFF.audio.currentTime>0 && !OFF.audio.ended){
