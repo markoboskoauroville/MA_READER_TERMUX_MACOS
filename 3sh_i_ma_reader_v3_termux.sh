@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.17
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.18
 #
 # repo: ma-reader-thermux
 #
@@ -386,7 +386,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.17%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.18%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1954,6 +1954,91 @@ SP_POPULAR = ["george", "henry", "carly", "sabrina"]
 SP_PER_SET = 4                # four buttons, and no room for a fifth
 SP_PER_SEX = 2                # so each page is two female and two male
 SP_MODEL = "simba-english"
+
+# ---------------------------------------------------------------------------
+# CROATIAN
+#
+# Speechify has NO Croatian voice. The full catalogue was walked, 985 voices,
+# every page: there is no hr-HR on any model. The only Slavic locales that
+# exist at all are ru-RU (50), pl-PL (2) and uk-UA (2). So Croatian is always
+# read by a foreign voice, and the question is only which foreign voice
+# mangles it least.
+#
+# Marko compared five renderings of the same Croatian sentence and chose a
+# Ukrainian voice first: Slavic phonetics handle c-caron, c-acute, z-caron,
+# s-caron, d-stroke and the -lj- -nj- clusters that English simply cannot.
+# Do not substitute other voices for these two without asking him.
+#
+# MODEL COVERAGE, measured rather than taken from the documentation:
+#     simba-english        5 locales   en-AU en-GB en-IN en-NG en-US
+#     simba-3.2            2 locales   en-GB en-US
+#     simba-multilingual  36 locales
+#     simba-3.0           36 locales
+# lesya exists ONLY on simba-multilingual and simba-3.0, so calling it with
+# simba-english fails. Beatrice supports all four, but for Croatian she must
+# be asked for on simba-multilingual, which is the whole point of offering
+# her as the second option.
+SP_MODEL_MULTI = "simba-multilingual"
+CRO_VOICES = [
+    {"id": "lesya",       "name": "Lesya",    "sub": "Ukrainian female"},
+    {"id": "beatrice_32", "name": "Beatrice", "sub": "UK English female"},
+]
+CRO_DEFAULT = "lesya"
+CRO_SAMPLE = ("Dobar dan. Rije\u010d je o \u010di\u0161\u0107enju, "
+              "\u0111aci u\u010de \u017euto sunce, a \u0161uma \u0161umi "
+              "tiho pokraj Kukljice.")
+
+_CRO_MARKS = set("\u010d\u0107\u017e\u0161\u0111\u010c\u0106\u017d\u0160\u0110")
+_CRO_WORDS = {
+    "je", "su", "da", "se", "ne", "sam", "smo", "ste", "bi", "biti", "nije",
+    "ima", "nema", "kao", "ali", "ili", "jer", "pa", "te", "sve", "vi\u0161e",
+    "ovo", "ono", "taj", "ta", "to", "koji", "koja", "koje", "kada", "gdje",
+    "\u0161to", "kako", "jo\u0161", "samo", "vec", "ve\u0107", "bez", "pod",
+    "nad", "pri", "kroz", "prema", "izme\u0111u", "hvala", "dobar", "dobro",
+}
+_ENG_WORDS = {
+    "the", "and", "of", "to", "in", "is", "it", "that", "for", "on", "with",
+    "as", "was", "at", "by", "an", "be", "this", "have", "from", "or", "one",
+    "had", "but", "what", "all", "were", "when", "we", "there", "can", "said",
+}
+
+def looks_croatian(text):
+    """Is this sentence Croatian?
+
+    Two signals, and either is enough on its own, because a short sentence may
+    carry only one of them. Diacritics are decisive: no English text contains
+    c-caron or d-stroke. Otherwise a count of Croatian function words against
+    English ones, which settles sentences like 'To je bilo dobro' that happen
+    to have no accents in them at all.
+    """
+    if not text:
+        return False
+    for ch in text:
+        if ch in _CRO_MARKS:
+            return True
+    words = re.findall(r"[a-z\u0161\u0111\u010d\u0107\u017e]+", text.lower())
+    if not words:
+        return False
+    hr = sum(1 for w in words if w in _CRO_WORDS)
+    en = sum(1 for w in words if w in _ENG_WORDS)
+    if en > hr:
+        return False
+    return hr >= 2 or (hr >= 1 and len(words) <= 4)
+
+
+def cro_voice_id():
+    v = load_state().get("croVoice") or CRO_DEFAULT
+    return v if any(c["id"] == v for c in CRO_VOICES) else CRO_DEFAULT
+
+
+def sp_voice_for(text, voice_id):
+    """Which voice and which model this sentence should be spoken with.
+
+    The pairing matters as much as the choice: a voice asked for on a model
+    that does not carry it returns an error, not a fallback."""
+    if looks_croatian(text):
+        return cro_voice_id(), SP_MODEL_MULTI
+    return voice_id, SP_MODEL
 SP_PAGE = 200                 # the API caps a page here; default is only 50
 SP_MAX_PAGES = 12
 SP_LIMITED_REST = 300         # seconds a 429'd key is stood down before retry
@@ -2479,8 +2564,9 @@ def sp_tokens(text, marks):
 def synth_unit_speechify(text, voice_id, mp3_path, json_path):
     """One sentence, one mp3, one timing file. The ring handles a key dying
     mid-sentence: sp_call condemns it and retries this very request."""
+    voice_id, model = sp_voice_for(text, voice_id)
     payload = {"input": text, "voice_id": voice_id,
-               "audio_format": "mp3", "model": SP_MODEL}
+               "audio_format": "mp3", "model": model}
     body, err = sp_call("/v1/audio/speech", payload=payload, timeout=120)
     if body is None:
         return err or "Speechify failed"
@@ -2571,6 +2657,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "floatPaste": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
+                  "croVoice": "lesya",
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 13, "focus": False,
@@ -2633,6 +2720,8 @@ def load_state():
     # A font or a pane that no longer exists must not survive on disk. The
     # client copes with either, but a stored value nobody recognises is a
     # small lie that outlives the release that made it.
+    if st.get("croVoice") not in [c["id"] for c in CRO_VOICES]:
+        st["croVoice"] = CRO_DEFAULT
     if st.get("font") not in ("sans", "book", "serif", "mono"):
         st["font"] = "sans"
     if st.get("pane") not in ("edge", "speechify", "app"):
@@ -3420,6 +3509,42 @@ def preview_name(vkey):
     if vkey in VOICE_BY_VKEY:
         return VOICE_BY_VKEY[vkey][1]
     return None
+
+
+@app.route("/api/preview_hr/<vid>")
+def api_preview_hr(vid):
+    """One fixed Croatian sentence, so the two can be compared by ear without
+    leaving Settings. It exercises every sound English gets wrong."""
+    if not any(c["id"] == vid for c in CRO_VOICES):
+        return jsonify({"error": "unknown voice"}), 404
+    safe = re.sub(r"[^A-Za-z0-9_]", "", vid)[:48]
+    mp3 = os.path.join(PREVIEW_DIR, "hr_" + safe + ".mp3")
+    if not os.path.exists(mp3) or os.path.getsize(mp3) < 400:
+        with _lock_for(("preview_hr", safe)):
+            if not os.path.exists(mp3) or os.path.getsize(mp3) < 400:
+                os.makedirs(PREVIEW_DIR, exist_ok=True)
+                payload = {"input": CRO_SAMPLE, "voice_id": vid,
+                           "audio_format": "mp3", "model": SP_MODEL_MULTI}
+                body, err = sp_call("/v1/audio/speech", payload=payload, timeout=120)
+                if body is None:
+                    return jsonify({"error": err or "Speechify failed"}), 502
+                try:
+                    audio = base64.b64decode(body.get("audio_data") or "")
+                except Exception:
+                    audio = b""
+                if not audio:
+                    return jsonify({"error": "no audio"}), 502
+                with open(mp3 + ".part", "wb") as f:
+                    f.write(audio)
+                os.replace(mp3 + ".part", mp3)
+                sp_note_usage(_sp_last, body.get("billable_characters_count"))
+    return send_file(mp3, mimetype="audio/mpeg")
+
+
+@app.route("/api/cro_voices")
+def api_cro_voices():
+    return jsonify({"voices": CRO_VOICES, "chosen": cro_voice_id(),
+                    "sample": CRO_SAMPLE})
 
 
 @app.route("/api/preview/<vkey>")
@@ -4805,6 +4930,21 @@ body.hassession .tab.player{display:block}
   background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
 .engtab.on small{color:var(--dim)}
 .group.g-sp{--gc:#7dd3fc}
+.crogrid{display:flex; flex-direction:column; gap:8px; margin:2px 0 6px}
+.crorow{display:flex; align-items:center; gap:10px; padding:10px 12px;
+  border:1px solid var(--line); border-radius:12px; background:var(--panel)}
+.crorow.on{box-shadow:0 0 0 2px var(--tune);
+  background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
+.crorow .cropick{flex:1; min-width:0; text-align:left; background:none;
+  border:none; padding:0; color:inherit}
+.crorow .cropick b{display:block; font-size:14px; color:var(--text);
+  font-weight:600}
+.crorow .cropick small{display:block; font-size:10.5px; color:var(--faint);
+  margin-top:2px}
+.crorow .croplay{flex:0 0 auto; width:38px; height:38px; padding:0;
+  border:1px solid var(--line); border-radius:50%; background:transparent;
+  color:var(--tune); font-size:14px; line-height:1}
+.crorow .croplay:active{border-color:var(--tune)}
 .accrow{display:flex; gap:8px; margin-bottom:12px}
 .accbtn{flex:1; border:1px solid var(--line); background:var(--panel);
   color:var(--dim); border-radius:11px; padding:10px 8px; font-size:14px;
@@ -5125,7 +5265,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.17 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.18 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5308,6 +5448,13 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <span><i style="border-color:var(--homme)"></i>male</span>
     </div>
     <div class="setnums" id="spNums"></div>
+
+    <!-- Speechify has no Croatian voice at all, so Croatian is always read by
+         a foreign one. This picks which. -->
+    <div class="wsub">&#128264; Croatian reading voice</div>
+    <div class="crogrid" id="croGrid"></div>
+    <div class="langhint">Speechify has no Croatian voice. English is
+      unaffected.</div>
 
     <div class="wsub">Keys</div>
     <div class="keybox">
@@ -5611,7 +5758,7 @@ const ST = {
      two as the same value is what made unticked voices come back on every
      restart: the seed could not tell a decision from a blank. */
   /* Baba's own starting point, so a fresh install is not a chore. */
-  voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
+  croVoice: "lesya", voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
   pane: "app",
   mode: "read",
   tid: "", title: "", sentences: [],
@@ -6046,6 +6193,61 @@ function fmtChars(n){
 /* Every key, not only the dead ones, and what each has spent. Shared files
    get used unevenly and there is no other way to see whose account is
    carrying everyone. */
+/* The Croatian rows. Two hit areas, as with the voice tick boxes: the name
+   chooses the voice, the round button speaks one fixed Croatian sentence so
+   the two can be compared by ear without leaving Settings. */
+let CROV = null, croAudio = null;
+function stopCroPreview(){
+  if(croAudio){ try{ croAudio.pause(); }catch(e){} croAudio = null; }
+  document.querySelectorAll("#croGrid .croplay")
+    .forEach(b => b.innerHTML = "&#9654;");
+}
+function renderCroGrid(){
+  const wrap = $("#croGrid"); if(!wrap) return;
+  wrap.innerHTML = "";
+  (CROV || []).forEach(v => {
+    const row = document.createElement("div");
+    row.className = "crorow" + (v.id === ST.croVoice ? " on" : "");
+
+    const pick = document.createElement("button");
+    pick.className = "cropick";
+    pick.innerHTML = `<b>${v.name}</b><small>${v.sub}</small>`;
+    pick.onclick = ()=>{
+      ST.croVoice = v.id; renderCroGrid(); persist();
+      toast(v.name + " reads Croatian");
+    };
+    row.appendChild(pick);
+
+    const play = document.createElement("button");
+    play.className = "croplay";
+    play.innerHTML = "&#9654;";
+    play.title = "Hear a Croatian sentence";
+    play.onclick = (e)=>{
+      e.stopPropagation();
+      const wasMine = croAudio && croAudio.dataset && croAudio.dataset.vid === v.id;
+      stopCroPreview();
+      if(wasMine) return;                 /* a second tap stops it */
+      try{ pause(); }catch(e2){}
+      const a = new Audio("/api/preview_hr/" + encodeURIComponent(v.id));
+      a.dataset.vid = v.id;
+      croAudio = a;
+      play.innerHTML = "&#9632;";
+      a.onended = stopCroPreview;
+      a.onerror = ()=>{ stopCroPreview(); toast("Could not play that voice."); };
+      a.play().catch(()=>{ stopCroPreview(); toast("Could not play that voice."); });
+    };
+    row.appendChild(play);
+    wrap.appendChild(row);
+  });
+}
+function loadCroVoices(){
+  api("/api/cro_voices").then(r=>r.json()).then(d=>{
+    CROV = d.voices || [];
+    if(d.chosen && !ST.croVoice) ST.croVoice = d.chosen;
+    renderCroGrid();
+  }).catch(()=>{});
+}
+
 function renderSpKeyList(){
   const wrap = $("#spList"); if(!wrap) return;
   const list = (ST.spInfo && ST.spInfo.keyList) || [];
@@ -7393,6 +7595,7 @@ function closeSheet(){
   $("#backdrop").classList.remove("show"); $("#sheet").classList.remove("show");
   document.body.classList.remove("sheetopen");
   try{ stopPreview(); }catch(e){}
+  try{ stopCroPreview(); }catch(e){}
   try{ persistNow(); }catch(e){}
 }
 
@@ -7664,6 +7867,7 @@ function stateBody(){
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines,
         spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
+        croVoice:ST.croVoice||"lesya",
         fullOnPaste:!!ST.fullOnPaste,
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read", pane:ST.pane||"app",
         voiceBar:!!ST.voiceBar,
@@ -8952,6 +9156,7 @@ function boot(){
     ST.bgResume = !!st.bgResume;
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : null;
+    ST.croVoice = st.croVoice || "lesya";
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;
     ST.hideTabs = !!st.hideTabs;
     ST.pane = (st.pane === "edge" || st.pane === "speechify") ? st.pane : "app";
@@ -9017,7 +9222,7 @@ function boot(){
       if(first){ ST.voice = first.id; ST.vkey = first.vkey; }
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
-    renderEdgeGrid(); renderSpKeyList(); renderSpDead();
+    renderEdgeGrid(); renderSpKeyList(); renderSpDead(); loadCroVoices();
     mediaSetup(); wireFloat(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyLag(); applyWgap(); applySize();

@@ -514,3 +514,46 @@ Re-verified 12.8.2026 against the same account: 21 of 21 keys still working,
 catalogue now 963 voices (33 en-GB, 82 en-US), which is a reminder that the
 catalogue MOVES and must never be hard coded. Model behaviour measured, see
 TRAP FIVE.
+
+## Croatian, and the fact behind it
+
+Speechify has NO CROATIAN VOICE. The full catalogue was walked, 985 voices,
+every page: there is no hr-HR on any model. The only Slavic locales that exist
+at all are ru-RU (50 voices), pl-PL (2) and uk-UA (2). So Croatian is always
+read by a foreign voice, and the only question is which one mangles it least.
+
+Marko compared five renderings of one Croatian sentence and chose a Ukrainian
+voice first, Slavic phonetics being the ones that survive c-caron, c-acute,
+z-caron, s-caron, d-stroke and the -lj- -nj- clusters. Do not substitute other
+voices for these two without asking him.
+
+    Lesya       lesya         Ukrainian female     the default
+    Beatrice    beatrice_32   UK English female    second choice
+
+MODEL COVERAGE, measured rather than taken from the documentation:
+
+    simba-english        5 locales   en-AU en-GB en-IN en-NG en-US
+    simba-3.2            2 locales   en-GB en-US
+    simba-multilingual  36 locales
+    simba-3.0           36 locales
+
+Both Croatian voices are asked for on simba-multilingual. lesya is documented
+as existing only on multilingual and 3.0.
+
+MEASURED, AND IT CONTRADICTS THE BRIEF: lesya on simba-english returned 200
+with audio, it did not fail. The pairing is kept anyway, because
+simba-multilingual is the model the voice is documented on and the one Marko
+actually auditioned by ear. An undocumented success is not a guarantee.
+
+THE RULE AT RUNTIME. Every sentence is tested on its way to synthesis, so a
+mixed document switches voice sentence by sentence:
+
+    Croatian  ->  croVoice + simba-multilingual
+    anything else ->  the chosen voice + simba-english
+
+Detection uses two signals, either sufficient. Diacritics are decisive, since
+no English text contains c-caron or d-stroke. Otherwise Croatian function
+words are counted against English ones, which settles a sentence like
+"To je bilo dobro" that carries no accents at all. German, French and Japanese
+fall to the English voice: there is no third choice to make, and claiming they
+are Croatian would be worse than saying nothing.

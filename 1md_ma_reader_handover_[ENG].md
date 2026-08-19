@@ -93,6 +93,18 @@ Both appear on the top row together whenever each has voices to show:
 Speechify first, Edge below, each scrolling on its own. Tapping a voice from
 either row moves the engine to match it.
 
+### Croatian
+
+Speechify has no Croatian voice at all: 985 voices walked, no hr-HR on any
+model. So a foreign voice reads it, and a control under Speechify picks which.
+Lesya, Ukrainian female, is the default; Beatrice, UK female, is the second
+choice. Both are asked for on simba-multilingual. Each row has a play button
+that speaks one fixed Croatian sentence chosen to exercise every sound English
+gets wrong, so the two can be compared by ear without leaving Settings.
+
+The choice applies per SENTENCE, so a document that mixes the two languages
+switches voice as it reads. English is entirely unaffected.
+
 ### The Speechify key ring
 
 Lazy. Nothing is tested in advance. The first key not already known to be dead
