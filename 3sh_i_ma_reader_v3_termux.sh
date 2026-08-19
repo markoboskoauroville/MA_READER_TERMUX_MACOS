@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.27
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.28
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.27%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.28%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2724,11 +2724,44 @@ def groq_is_english(text):
 # be asked for on simba-multilingual, which is the whole point of offering
 # her as the second option.
 SP_MODEL_MULTI = "simba-multilingual"
+# Ported from TTT_MINI MaSpeechify.kt, ordered as Baba ranked them by ear, so
+# the first entry is the shipped default and the settings screen can simply
+# show the list.
+#
+# THE MODEL FOLLOWS THE VOICE, never a global default. lesya exists only on
+# simba-multilingual and simba-3.0; simba-3.2 answers HTTP 400 for any voice
+# outside the eight curated _32 ids. Both measured, not read.
+#
+# Beatrice appears in BOTH lists, on a different model in each. She is the
+# same voice; asked for on simba-multilingual she will attempt Croatian, and
+# on simba-english she is the English reader.
 CRO_VOICES = [
-    {"id": "lesya",       "name": "Lesya",    "sub": "Ukrainian female"},
-    {"id": "beatrice_32", "name": "Beatrice", "sub": "UK English female"},
+    {"id": "lesya",       "name": "Lesya",    "sub": "Ukrainian female \u2014 Slavic sounds",
+     "model": SP_MODEL_MULTI},
+    {"id": "beatrice_32", "name": "Beatrice", "sub": "British female \u2014 warm",
+     "model": SP_MODEL_MULTI},
+    {"id": "dominika",    "name": "Dominika", "sub": "Polish female",
+     "model": SP_MODEL_MULTI},
+    {"id": "daria",       "name": "Daria",    "sub": "Russian female",
+     "model": SP_MODEL_MULTI},
+]
+# THE IDS CARRY THE _32 SUFFIX. TTT_MINI's table lists imogen, edmund and hugh
+# bare, and three of those four answer HTTP 404 on this account: the curated
+# British voices are published as imogen_32, edmund_32 and hugh_32. Checked
+# against the live catalogue rather than copied, and every one of the eight
+# seats below was spoken for real before this shipped.
+ENG_VOICES = [
+    {"id": "beatrice_32", "name": "Beatrice", "sub": "British female \u2014 warm",
+     "model": SP_MODEL},
+    {"id": "imogen_32",   "name": "Imogen",   "sub": "British female",
+     "model": SP_MODEL},
+    {"id": "edmund_32",   "name": "Edmund",   "sub": "British male",
+     "model": SP_MODEL},
+    {"id": "hugh_32",     "name": "Hugh",     "sub": "British male",
+     "model": SP_MODEL},
 ]
 CRO_DEFAULT = "lesya"
+ENG_DEFAULT = "beatrice_32"
 CRO_SAMPLE = ("Dobar dan. Rije\u010d je o \u010di\u0161\u0107enju, "
               "\u0111aci u\u010de \u017euto sunce, a \u0161uma \u0161umi "
               "tiho pokraj Kukljice.")
@@ -2776,6 +2809,26 @@ def cro_voice_id():
     return v if any(c["id"] == v for c in CRO_VOICES) else CRO_DEFAULT
 
 
+def eng_voice_id():
+    v = load_state().get("engVoice") or ENG_DEFAULT
+    return v if any(c["id"] == v for c in ENG_VOICES) else ENG_DEFAULT
+
+
+def sp_seat(vid, table, default):
+    """The chosen row from one of the two voice lists.
+
+    Named sp_seat rather than sp_pick because sp_pick already exists further
+    down for the catalogue ordering, and the later definition silently wins in
+    Python. Two functions with one name is a bug that compiles."""
+    for v in table:
+        if v["id"] == vid:
+            return v
+    for v in table:
+        if v["id"] == default:
+            return v
+    return table[0]
+
+
 def reading_lang():
     """Which language the app is reading, resolved to eng or hr.
 
@@ -2804,8 +2857,10 @@ def sp_voice_for(text, voice_id):
     voice. The switch decides; the text does not get a vote unless the switch
     has handed it one by being set to AUTO."""
     if reading_lang() == "hr":
-        return cro_voice_id(), SP_MODEL_MULTI
-    return voice_id, SP_MODEL
+        v = sp_seat(cro_voice_id(), CRO_VOICES, CRO_DEFAULT)
+    else:
+        v = sp_seat(eng_voice_id(), ENG_VOICES, ENG_DEFAULT)
+    return v["id"], v["model"]
 SP_PAGE = 200                 # the API caps a page here; default is only 50
 SP_MAX_PAGES = 12
 SP_LIMITED_REST = 300         # seconds a 429'd key is stood down before retry
@@ -3424,7 +3479,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "spSet": 0, "bgResume": False, "bothEngines": False,
                   "floatPaste": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
-                  "croVoice": "lesya", "lang": "eng", "langAuto": "eng", "wtime": True,
+                  "croVoice": "lesya", "engVoice": "beatrice_32", "lang": "eng", "langAuto": "eng", "wtime": True,
                   "mode": "read",
                   "fpX": 0.82, "fpY": 0.72,
                   "loop": False, "autoplay": False, "size": 13, "focus": False,
@@ -3494,6 +3549,8 @@ def load_state():
         st["langAuto"] = "eng"
     if st.get("croVoice") not in [c["id"] for c in CRO_VOICES]:
         st["croVoice"] = CRO_DEFAULT
+    if st.get("engVoice") not in [c["id"] for c in ENG_VOICES]:
+        st["engVoice"] = ENG_DEFAULT
     if st.get("font") not in ("sans", "book", "serif", "mono"):
         st["font"] = "sans"
     if st.get("pane") not in ("edge", "speechify", "app"):
@@ -4057,6 +4114,50 @@ def preview_name(vkey):
     return None
 
 
+@app.route("/api/preview_v/<vid>")
+def api_preview_v(vid):
+    """A voice says its own name.
+
+    Ported from TTT_MINI: "Hi, I am Lesya" tells him the accent, the pace and
+    the warmth in four words, and ties the sound to the row he is looking at,
+    which a neutral sentence would not."""
+    v = None
+    for t in (CRO_VOICES, ENG_VOICES):
+        for c in t:
+            if c["id"] == vid:
+                v = c
+                break
+        if v:
+            break
+    if not v:
+        return jsonify({"error": "unknown voice"}), 404
+    hr = any(c["id"] == vid for c in CRO_VOICES) and request.args.get("hr") == "1"
+    line = ("Bok, ja sam %s. \u010citam hrvatski." % v["name"]) if hr \
+        else ("Hi, I am %s." % v["name"])
+    safe = re.sub(r"[^A-Za-z0-9_]", "", vid)[:48] + ("_hr" if hr else "_en")
+    mp3 = os.path.join(PREVIEW_DIR, "v_" + safe + ".mp3")
+    if not os.path.exists(mp3) or os.path.getsize(mp3) < 400:
+        with _lock_for(("preview_v", safe)):
+            if not os.path.exists(mp3) or os.path.getsize(mp3) < 400:
+                os.makedirs(PREVIEW_DIR, exist_ok=True)
+                body, err = sp_call("/v1/audio/speech", payload={
+                    "input": line, "voice_id": vid, "audio_format": "mp3",
+                    "model": v["model"]}, timeout=120)
+                if body is None:
+                    return jsonify({"error": err or "Speechify failed"}), 502
+                try:
+                    audio = base64.b64decode(body.get("audio_data") or "")
+                except Exception:
+                    audio = b""
+                if not audio:
+                    return jsonify({"error": "no audio"}), 502
+                with open(mp3 + ".part", "wb") as f:
+                    f.write(audio)
+                os.replace(mp3 + ".part", mp3)
+                sp_note_usage(_sp_last, body.get("billable_characters_count"))
+    return send_file(mp3, mimetype="audio/mpeg")
+
+
 @app.route("/api/preview_hr/<vid>")
 def api_preview_hr(vid):
     """One fixed Croatian sentence, so the two can be compared by ear without
@@ -4166,7 +4267,10 @@ def api_lang_detect():
 
 @app.route("/api/cro_voices")
 def api_cro_voices():
-    return jsonify({"voices": CRO_VOICES, "chosen": cro_voice_id(),
+    """Both lists, and which one is chosen in each."""
+    return jsonify({"cro": CRO_VOICES, "eng": ENG_VOICES,
+                    "croChosen": cro_voice_id(), "engChosen": eng_voice_id(),
+                    "voices": CRO_VOICES, "chosen": cro_voice_id(),
                     "sample": CRO_SAMPLE})
 
 
@@ -5528,6 +5632,24 @@ body.hassession .tab.player{display:block}
   background:color-mix(in srgb, var(--tune) 12%, var(--panel))}
 .engtab.on small{color:var(--dim)}
 .group.g-sp{--gc:#7dd3fc}
+/* One row per voice: a radio, a name, a detail line, and a play button that
+   speaks the voice's own name. Nothing to page through, nothing to hunt. */
+.radios{display:flex; flex-direction:column; margin:2px 0 14px}
+.rrow{display:flex; align-items:center; gap:12px; padding:12px 4px;
+  border:none; background:none; width:100%; text-align:left;
+  border-bottom:1px solid color-mix(in srgb, var(--line) 55%, transparent)}
+.rrow:last-child{border-bottom:none}
+.rdot{flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+  border:2px solid var(--faint); position:relative}
+.rrow.on .rdot{border-color:var(--tune)}
+.rrow.on .rdot::after{content:""; position:absolute; inset:4px;
+  border-radius:50%; background:var(--tune)}
+.rtxt{flex:1; min-width:0}
+.rtxt b{display:block; font-size:15px; color:var(--text); font-weight:600}
+.rtxt small{display:block; font-size:11.5px; color:var(--faint); margin-top:3px}
+.rplay{flex:0 0 auto; width:40px; height:40px; padding:0; border-radius:50%;
+  border:1px solid var(--line); background:transparent; color:var(--tune);
+  font-size:13px; line-height:1}
 .crogrid{display:flex; flex-direction:column; gap:8px; margin:2px 0 6px}
 .crorow{display:flex; align-items:center; gap:10px; padding:10px 12px;
   border:1px solid var(--line); border-radius:12px; background:var(--panel)}
@@ -5863,7 +5985,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.27 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.28 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6019,26 +6141,16 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <div class="group g-sp" data-eng="speechify">
     <h3>Speechify voices</h3>
 
-    <div class="accrow" id="spAccents"></div>
+    <!-- Two short lists of radio rows rather than a paged catalogue. Ported
+         from TTT_MINI: a radio says plainly which one is chosen, where a grid
+         of chips has to be read twice. -->
+    <div class="wsub">Croatian</div>
+    <div class="langhint">Speechify has no Croatian voice &mdash; none exists on
+      any model. These read Croatian with a foreign accent, best first.</div>
+    <div class="radios" id="croList"></div>
 
-    <div class="setbar">
-      <button class="setarrow" id="spPrev" title="Previous four">&#8592;</button>
-      <span class="setcount" id="spCount"></span>
-      <button class="setarrow" id="spNext" title="Next four">&#8594;</button>
-    </div>
-    <div class="spgrid" id="spVoiceGrid"></div>
-    <div class="setlegend">
-      <span><i style="border-color:var(--femme)"></i>female</span>
-      <span><i style="border-color:var(--homme)"></i>male</span>
-    </div>
-    <div class="setnums" id="spNums"></div>
-
-    <!-- Speechify has no Croatian voice at all, so Croatian is always read by
-         a foreign one. This picks which. -->
-    <div class="wsub">&#128264; Croatian reading voice</div>
-    <div class="crogrid" id="croGrid"></div>
-    <div class="langhint">Speechify has no Croatian voice. English is
-      unaffected.</div>
+    <div class="wsub">English</div>
+    <div class="radios" id="engList"></div>
 
     <div class="wsub">Keys</div>
     <div class="keybox">
@@ -6346,7 +6458,8 @@ const ST = {
      two as the same value is what made unticked voices come back on every
      restart: the seed could not tell a decision from a blank. */
   /* Baba's own starting point, so a fresh install is not a chore. */
-  lang: "eng", langAuto: "eng", croVoice: "lesya", voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
+  lang: "eng", langAuto: "eng", croVoice: "lesya", engVoice: "beatrice_32",
+  voiceBar: true, spPicked: null, fullOnPaste: false, hideTabs: true,
   pane: "app",
   mode: "read",
   tid: "", title: "", sentences: [],
@@ -6427,10 +6540,12 @@ function edgeVoices(){
 /* In Croatian, Speechify's offering IS the Croatian pair: it has no Croatian
    voice of its own, so the two auditioned foreigners are the whole set. */
 function croPseudoVoices(){
-  return (CROV || []).map(v => ({
+  const l = (ST.lang === "auto") ? (ST.langAuto || "eng") : ST.lang;
+  const list = (CROV && (l === "hr" ? CROV.cro : CROV.eng)) || [];
+  return list.map(v => ({
     id: "cro:" + v.id, vkey: "cro_" + v.id, name: v.name,
     label: v.sub, sex: /female/i.test(v.sub) ? "F" : "M",
-    engine: "speechify", cro: v.id
+    engine: "speechify", cro: v.id, forLang: l
   }));
 }
 /* The Speechify catalogue is far longer than the four buttons at the top of
@@ -6477,9 +6592,7 @@ function togglePick(vkey){
    thing is one way too many, and the ticks are the honest one because they
    say WHICH voices as well as whether. */
 function topEdge(){ return edgeVoices(); }
-function topSp(){
-  return ST.lang === "hr" ? croPseudoVoices() : spPickedVoices();
-}
+function topSp(){ return croPseudoVoices(); }
 function shownVoices(){
   return ST.engine === "speechify" ? topSp() : topEdge();
 }
@@ -6489,7 +6602,8 @@ function spAll(){ return ST.spVoices || []; }
    is not a catalogue voice and never becomes ST.voice. */
 function voiceIsCurrent(v){
   if(!v) return false;
-  if(v.cro) return v.cro === ST.croVoice && ST.engine === "speechify";
+  if(v.cro) return v.cro === ((v.forLang === "hr") ? ST.croVoice : ST.engVoice)
+                  && ST.engine === "speechify";
   return v.id === ST.voice;
 }
 function anyVoice(id){
@@ -6669,7 +6783,8 @@ function setVoice(id, quiet){
   /* A Croatian seat is not a catalogue voice, it is a choice of WHICH foreign
      voice reads Croatian, so it is stored as that and nothing else moves. */
   if(typeof id === "string" && id.indexOf("cro:") === 0){
-    ST.croVoice = id.slice(4);
+    const _l = (ST.lang === "auto") ? (ST.langAuto || "eng") : ST.lang;
+    if(_l === "hr") ST.croVoice = id.slice(4); else ST.engVoice = id.slice(4);
     if(ST.engine !== "speechify"){ ST.engine = "speechify"; applyEngineCards(); }
     renderVoices(); try{ renderCroGrid(); }catch(e){}
     persist();
@@ -6787,81 +6902,13 @@ function setEngine(e, quiet){
 }
 
 /* ---------- Speechify: accents, its four voices, and the key ring ---------- */
-function renderSpAccents(){
-  const wrap = $("#spAccents"); if(!wrap) return;
-  wrap.innerHTML = "";
-  ((ST.spInfo && ST.spInfo.accents) || []).forEach(a=>{
-    const b = document.createElement("button");
-    b.className = "accbtn" + (a.key === ST.spAccent ? " on" : "");
-    b.textContent = a.label;
-    b.onclick = ()=> setSpAccent(a.key);
-    wrap.appendChild(b);
-  });
-}
-function renderSpGrid(){
-  const wrap = $("#spVoiceGrid"); if(!wrap) return;
-  wrap.innerHTML = "";
-  const list = spWindow();
-  if(!list.length){
-    const d = document.createElement("div");
-    d.className = "spstate";
-    d.textContent = "No voices yet. Load a key file below.";
-    wrap.appendChild(d);
-    renderSpPager(); return;
-  }
-  list.forEach(v=>{
-    const row = document.createElement("div");
-    row.className = "spcell " + sexClass(v) + (v.id === ST.voice ? " on" : "");
-
-    const box = document.createElement("button");
-    box.className = "spbox" + (isPicked(v.vkey) ? " ticked" : "");
-    box.innerHTML = isPicked(v.vkey) ? "&#10003;" : "";
-    box.title = "Show this voice at the top";
-    box.onclick = (e)=>{
-      e.stopPropagation();
-      togglePick(v.vkey);
-      renderSpGrid(); renderVoices(); persist();
-    };
-    row.appendChild(box);
-
-    const nm = document.createElement("button");
-    nm.className = "spname";
-    nm.innerHTML = `<b>${v.name}</b><small>${voiceSub(v)}</small>`;
-    nm.onclick = ()=>{ if(ST.engine !== "speechify") setEngine("speechify", true);
-                       setVoice(v.id); renderSpGrid(); previewVoice(v); };
-    row.appendChild(nm);
-    wrap.appendChild(row);
-  });
-  renderSpPager();
-}
+function renderSpAccents(){ /* the accent row is gone: two radio lists replaced it */ }
+function renderSpGrid(){ /* the paged grid is gone: two radio lists replaced it */ }
 
 /* Paging. Two arrows and a count, then a row of numbers so any page is one
    tap away rather than forty. With 84 American voices that is 21 pages, and
    walking to page 19 with an arrow would be absurd. */
-function renderSpPager(){
-  const cnt = $("#spCount"), prev = $("#spPrev"), next = $("#spNext"),
-        nums = $("#spNums");
-  const total = spSets(), cur = spClampSet(), have = spAll().length;
-  if(cnt){
-    cnt.innerHTML = have
-      ? `<b>${cur + 1} / ${total}</b> &middot; ${have} voices`
-      : "";
-  }
-  if(prev) prev.disabled = (cur <= 0);
-  if(next) next.disabled = (cur >= total - 1);
-  if(nums){
-    nums.innerHTML = "";
-    if(have){
-      for(let i = 0; i < total; i++){
-        const b = document.createElement("button");
-        b.className = "setnum" + (i === cur ? " on" : "");
-        b.textContent = String(i + 1);
-        b.onclick = ()=> spGoSet(i);
-        nums.appendChild(b);
-      }
-    }
-  }
-}
+function renderSpPager(){ /* its pager is gone: two radio lists replaced it */ }
 function spGoSet(i){
   const total = spSets();
   ST.spSet = Math.max(0, Math.min(total - 1, i));
@@ -6895,49 +6942,55 @@ function stopCroPreview(){
   document.querySelectorAll("#croGrid .croplay")
     .forEach(b => b.innerHTML = "&#9654;");
 }
-function renderCroGrid(){
-  const wrap = $("#croGrid"); if(!wrap) return;
-  wrap.innerHTML = "";
-  (CROV || []).forEach(v => {
-    const row = document.createElement("div");
-    row.className = "crorow" + (v.id === ST.croVoice ? " on" : "");
-
-    const pick = document.createElement("button");
-    pick.className = "cropick";
-    pick.innerHTML = `<b>${v.name}</b><small>${v.sub}</small>`;
-    pick.onclick = ()=>{
-      ST.croVoice = v.id; renderCroGrid(); persist();
-      toast(v.name + " reads Croatian");
-    };
-    row.appendChild(pick);
-
-    const play = document.createElement("button");
-    play.className = "croplay";
-    play.innerHTML = "&#9654;";
-    play.title = "Hear a Croatian sentence";
-    play.onclick = (e)=>{
-      e.stopPropagation();
-      const wasMine = croAudio && croAudio.dataset && croAudio.dataset.vid === v.id;
-      stopCroPreview();
-      if(wasMine) return;                 /* a second tap stops it */
-      try{ pause(); }catch(e2){}
-      const a = new Audio("/api/preview_hr/" + encodeURIComponent(v.id));
-      a.dataset.vid = v.id;
-      croAudio = a;
-      play.innerHTML = "&#9632;";
-      a.onended = stopCroPreview;
-      a.onerror = ()=>{ stopCroPreview(); toast("Could not play that voice."); };
-      a.play().catch(()=>{ stopCroPreview(); toast("Could not play that voice."); });
-    };
-    row.appendChild(play);
-    wrap.appendChild(row);
-  });
+function renderVoiceRadios(){
+  const draw = (boxId, list, chosen, pick, hrSample)=>{
+    const box = $(boxId); if(!box) return;
+    box.innerHTML = "";
+    (list || []).forEach(v => {
+      const row = document.createElement("button");
+      row.className = "rrow" + (v.id === chosen ? " on" : "");
+      const dot = document.createElement("span"); dot.className = "rdot";
+      const txt = document.createElement("span"); txt.className = "rtxt";
+      txt.innerHTML = "<b>" + v.name + "</b><small>" + (v.sub || "") + "</small>";
+      const play = document.createElement("button");
+      play.className = "rplay"; play.innerHTML = "&#9654;";
+      play.title = "Hear " + v.name;
+      play.onclick = (e)=>{
+        e.stopPropagation();
+        const url = "/api/preview_v/" + encodeURIComponent(v.id) +
+                    (hrSample ? "?hr=1" : "");
+        const mine = croAudio && croAudio.dataset && croAudio.dataset.u === url;
+        stopCroPreview();
+        if(mine) return;                       /* a second tap stops it */
+        try{ pause(); }catch(e2){}
+        const a = new Audio(url); a.dataset.u = url; croAudio = a;
+        play.innerHTML = "&#9632;";
+        a.onended = stopCroPreview;
+        a.onerror = ()=>{ stopCroPreview(); toast("Could not play that voice."); };
+        a.play().catch(()=>{ stopCroPreview(); toast("Could not play that voice."); });
+      };
+      row.onclick = ()=> pick(v);
+      row.appendChild(dot); row.appendChild(txt); row.appendChild(play);
+      box.appendChild(row);
+    });
+  };
+  draw("#croList", (CROV && CROV.cro) || [], ST.croVoice, v=>{
+    ST.croVoice = v.id; renderVoiceRadios(); renderVoices(); persist();
+    toast(v.name + " reads Croatian");
+  }, true);
+  draw("#engList", (CROV && CROV.eng) || [], ST.engVoice, v=>{
+    ST.engVoice = v.id; renderVoiceRadios(); renderVoices(); persist();
+    toast(v.name + " reads English");
+  }, false);
 }
+function renderCroGrid(){ renderVoiceRadios(); }
+
 function loadCroVoices(){
   api("/api/cro_voices").then(r=>r.json()).then(d=>{
-    CROV = d.voices || [];
-    if(d.chosen && !ST.croVoice) ST.croVoice = d.chosen;
-    renderCroGrid();
+    CROV = d;
+    if(d.croChosen && !ST.croVoice) ST.croVoice = d.croChosen;
+    if(d.engChosen && !ST.engVoice) ST.engVoice = d.engChosen;
+    renderVoiceRadios(); renderVoices();
   }).catch(()=>{});
 }
 
@@ -8639,7 +8692,8 @@ function stateBody(){
         spSet:ST.spSet||0, bgResume:!!ST.bgResume,
         bothEngines:!!ST.bothEngines,
         spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
-        croVoice:ST.croVoice||"lesya", lang:ST.lang||"eng",
+        croVoice:ST.croVoice||"lesya", engVoice:ST.engVoice||"beatrice_32",
+        lang:ST.lang||"eng",
         langAuto:ST.langAuto||"eng",
         fullOnPaste:!!ST.fullOnPaste,
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read", pane:ST.pane||"app",
@@ -9882,6 +9936,7 @@ function boot(){
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : null;
     ST.croVoice = st.croVoice || "lesya";
+    ST.engVoice = st.engVoice || "beatrice_32";
     ST.lang = (st.lang === "hr" || st.lang === "auto") ? st.lang : "eng";
     ST.langAuto = (st.langAuto === "hr") ? "hr" : "eng";
     ST.fullOnPaste = (st.fullOnPaste === undefined) ? true : !!st.fullOnPaste;

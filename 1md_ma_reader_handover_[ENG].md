@@ -300,6 +300,32 @@ A consequence worth knowing: a document that mixes the two languages is read
 in ONE voice, chosen by the switch, rather than switching sentence by
 sentence. That is the price of the switch meaning what it says.
 
+### The voices are two short lists
+
+Ported from TTT_MINI MaSpeechify.kt. Radio rows under two headings, Croatian
+and English, four each, ordered as Baba ranked them by ear so the first entry
+is the shipped default. The paged catalogue, the accent buttons, the tick
+boxes and the separate Croatian card are all gone: a radio says plainly which
+one is chosen where a grid of chips has to be read twice.
+
+    Croatian   Lesya (uk) · Beatrice (gb) · Dominika (pl) · Daria (ru)
+    English    Beatrice · Imogen · Edmund · Hugh
+
+BEATRICE IS IN BOTH LISTS, on a different model in each: simba-multilingual
+for Croatian, simba-english for English. She is one voice with two jobs, and
+that is the reason the model belongs to the VOICE ROW rather than to a global
+default.
+
+THE IDS CARRY THE _32 SUFFIX. TTT_MINI's table lists imogen, edmund and hugh
+bare, and three of those answer HTTP 404 on this account; the curated British
+voices are published as imogen_32, edmund_32 and hugh_32. Checked against the
+live catalogue rather than copied. All eight seats were spoken for real before
+this shipped.
+
+Each row has a play button and THE VOICE SAYS ITS OWN NAME, "Hi, I am Lesya",
+which tells the accent, the pace and the warmth in four words and ties the
+sound to the row being looked at. The Croatian rows say it in Croatian.
+
 ### Croatian
 
 Speechify has no Croatian voice at all: 985 voices walked, no hr-HR on any
