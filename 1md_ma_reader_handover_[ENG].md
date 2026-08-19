@@ -104,6 +104,35 @@ painted inside applyEngineCards, which setPane calls and setLang does not, so
 the language changed, the toast fired, and the button went on showing the old
 word. One painter, called by everyone who can change the language.
 
+## One picker, and the router behind it
+
+ONE file picker for the whole app, at the top of Settings. A key file is a
+working note, not a machine file, so keys are found inside whatever text
+surrounds them, each is CLASSIFIED BY ITS OWN SHAPE, and each is filed into
+the provider that can use it. Nobody is asked which provider a key belongs to,
+because the key already says.
+
+Ported from TTT_MINI ttt/keyring.py and Key_Tester KeyParser.kt.
+
+The app uses exactly two providers. A key for anything else is recognised,
+REPORTED, and not stored, so it is clear it was understood and simply not
+needed here. An unknown token could be a rebranded key for either provider, so
+it is offered to both and shown as "?" rather than "live": a wrong guess costs
+one refused request, a discarded key costs the key.
+
+The list beneath the picker IS THE FALLBACK ORDER. The first live key does the
+work; if it is refused the next takes over. Each row shows the provider, its
+position, a masked key, the label taken from the line above it in the file,
+and its state.
+
+## Gemini is gone
+
+Removed entirely: the key store, the cost-aware model router, the price table,
+the usage tally, all four routes, the settings card, the Help section and the
+KEEP entries. Roughly 290 lines of server code. The only mention left is the
+key parser's Google label, which is correct: it still recognises a Google key
+in order to report that this app does not need one.
+
 ## Groq
 
 Used for one question only. GROQ IS SPELLED WITH A Q.

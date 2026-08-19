@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.22
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.23
 #
 # repo: ma-reader-thermux
 #
@@ -324,8 +324,6 @@
 #     name.json        the manifest (sentence list + per clip word timing)
 #     name/ sNNNN.mp3  one small mp3 per sentence, played in order
 #
-# Optional Google Gemini key (added in Settings from a plain .txt file) can name
-# and summarise texts for the archive. Only Gemini errors are ever shown.
 #
 # Install:  bash 3sh_i_ma_reader_v3_termux.sh        Run:  mareadweb
 #           then open  http://localhost:8081  in any browser on the phone.
@@ -386,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.22%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.23%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -719,7 +717,7 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
 # a single request to rebuild, and carrying a stale one across an update is
 # how the picker got stuck showing four voices out of nine hundred.
-KEEP="gemini_key.txt gemini_state.json speechify_api.txt speechify_failed.json speechify_usage.json groq_api.txt groq_failed.json groq_model.json web_state.json web_state.json.bak browser.txt"
+KEEP="speechify_api.txt speechify_failed.json speechify_usage.json groq_api.txt groq_failed.json groq_model.json web_state.json web_state.json.bak browser.txt"
 
 # --------------------------------------------------- is it running already? --
 # A live server holds the old code in memory and keeps serving it after every
@@ -939,8 +937,6 @@ BASE = os.path.join(HOME, ".maread")
 LIB_DIR = os.path.join(BASE, "library")
 STATE_FILE = os.path.join(HOME, ".maread-web", "web_state.json")
 WEB_DIR = os.path.join(HOME, ".maread-web")
-GEMINI_KEY_FILE = os.path.join(WEB_DIR, "gemini_key.txt")
-GEMINI_STATE_FILE = os.path.join(WEB_DIR, "gemini_state.json")
 MANIFEST_SCHEMA = "mareader-karaoke/3"       # per-sentence clips (v9)
 MANIFEST_SCHEMA_LEGACY = "mareader-karaoke/2"  # old single stitched mp3
 STATIC_DIR = os.path.join(HOME, ".maread-web", "static")
@@ -2183,6 +2179,109 @@ def groq_call(path, payload=None, timeout=45, tries=None):
     return None, last
 
 
+
+# ---------------------------------------------------------------------------
+# THE KEY ROUTER
+#
+# ONE file picker for the whole app. A key file is a working note, not a
+# machine file, so keys are found inside whatever text surrounds them, each is
+# CLASSIFIED BY ITS OWN SHAPE, and each is filed into the provider that can
+# use it. Nobody is asked "which provider is this?" because the key already
+# says so.
+#
+# Ported from TTT_MINI ttt/keyring.py and Key_Tester KeyParser.kt. Two rules
+# from those repos kept verbatim, each learned the hard way:
+#   * never drop a key for its shape, shape only ranks
+#   * the line directly above a key is its label, usually an account note
+#
+# This app uses exactly two providers. A key for anything else is recognised,
+# reported, and not stored, so a person can see that it was understood and
+# simply not needed here.
+ROUTE_TARGETS = {"speechify": SPEECHIFY_KEY_FILE, "groq": GROQ_KEYFILE}
+
+
+def route_import(raw):
+    """File every key in this text into the provider that can use it.
+
+    Returns a report: how many of each provider were added, which were
+    recognised but not needed, and how many were already known."""
+    found = key_extract(raw or "")
+    report = {"added": {}, "known": {}, "other": {}, "total": len(found)}
+    for provider, path in ROUTE_TARGETS.items():
+        mine = [f for f in found if f["provider"] == provider]
+        # An unknown token could be a rebranded key for either provider, so it
+        # is offered to both rather than thrown away. A wrong guess costs one
+        # refused request; a discarded key costs the key.
+        mine += [f for f in found if f["provider"] == "unknown"]
+        if not mine:
+            continue
+        try:
+            have = open(path, encoding="utf-8", errors="replace").read()
+        except Exception:
+            have = ""
+        existing = {e["key"] for e in key_extract(have)}
+        new = [f for f in mine if f["key"] not in existing]
+        report["known"][provider] = len(mine) - len(new)
+        if not new:
+            continue
+        lines = []
+        for f in new:
+            if f.get("label"):
+                lines.append(f["label"])
+            lines.append(f["key"])
+        try:
+            os.makedirs(WEB_DIR, exist_ok=True)
+            body = (have.rstrip("\n") + "\n" if have.strip() else "")
+            tmp = path + ".part"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(body + "\n".join(lines) + "\n")
+            os.replace(tmp, path)
+            os.chmod(path, 0o600)
+        except Exception:
+            continue
+        report["added"][provider] = len(new)
+    for f in found:
+        p = f["provider"]
+        if p not in ROUTE_TARGETS and p != "unknown":
+            report["other"][p] = report["other"].get(p, 0) + 1
+    return report
+
+
+def route_list():
+    """Every key the app holds, masked, with its label and state.
+
+    Order is the order they will be TRIED, so the list doubles as the
+    fallback order: the first live one does the work, and if it is refused
+    the next takes over."""
+    out = []
+    dead_sp = set()
+    try:
+        dead_sp = {d.get("fp") if isinstance(d, dict) else d
+                   for d in json.load(open(SP_FAIL_FILE, encoding="utf-8"))}
+    except Exception:
+        pass
+    dead_gq = groq_dead()
+    for provider, path in (("speechify", SPEECHIFY_KEY_FILE), ("groq", GROQ_KEYFILE)):
+        try:
+            raw = open(path, encoding="utf-8", errors="replace").read()
+        except Exception:
+            continue
+        for i, e in enumerate(key_extract(raw)):
+            k = e["key"]
+            fp16 = hashlib.sha256(k.encode("utf-8")).hexdigest()[:16]
+            fp12 = fp16[:12]
+            dead = (fp16 in dead_gq) if provider == "groq" else \
+                   (fp12 in dead_sp or fp16 in dead_sp)
+            strong = e["provider"] == provider
+            out.append({
+                "provider": provider, "order": i + 1,
+                "mask": (k[:5] + "\u2026" + k[-4:]) if len(k) > 10 else "\u2026",
+                "label": e.get("label", ""),
+                "state": ("dead" if dead else ("live" if strong else "?")),
+                "strong": strong,
+            })
+    return out
+
 def groq_model_saved():
     try:
         return json.load(open(GROQ_STATE, encoding="utf-8")).get("model") or ""
@@ -3145,7 +3244,7 @@ def save_state(st):
 
 # ===========================================================================
 # v2 additions: mp3 duration, one-file karaoke export (mp3 + txt + json),
-# an offline library scanner, a Gemini key store, and a cost-aware model
+# an offline library scanner, and the key rings
 # router used for optional titles and summaries in the archive.
 # ===========================================================================
 
@@ -3209,235 +3308,9 @@ def mp3_duration(path):
         pass
     return _mp3_duration_frames(path)
 
-# ---------- Gemini key store + cost-aware model router ----------------------
 # Cheapest first. -latest aliases follow Google's newest tier so the ladder
 # keeps working as models come and go. The router only climbs when a cheaper
 # model fails validation, so easy jobs never touch a pricier model.
-GEMINI_MODELS = ["gemini-2.5-flash-lite", "gemini-flash-lite-latest",
-                 "gemini-flash-latest", "gemini-2.5-flash"]
-GEMINI_ENDPOINT = ("https://generativelanguage.googleapis.com/v1beta/"
-                   "models/%s:generateContent")
-
-# Public list prices, USD per 1,000,000 tokens (input, output). The -latest
-# aliases are priced by the tier they point at today. Every figure is an
-# ESTIMATE from token counts, not a real balance; Gemini has no public endpoint
-# that reports remaining credit for a developer key.
-GEMINI_PRICES = {
-    "gemini-2.5-flash-lite": (0.10, 0.40),
-    "gemini-flash-lite-latest": (0.25, 1.50),
-    "gemini-flash-latest": (0.50, 3.00),
-    "gemini-2.5-flash": (0.30, 2.50),
-}
-def _price_for(model):
-    if model in GEMINI_PRICES:
-        return GEMINI_PRICES[model]
-    if "flash-lite" in (model or ""):
-        return GEMINI_PRICES["gemini-flash-lite-latest"]
-    if "flash" in (model or ""):
-        return GEMINI_PRICES["gemini-flash-latest"]
-    return (0.50, 3.00)
-
-def _blank_usage():
-    return {"calls": 0, "in": 0, "out": 0, "cost": 0.0, "by_model": {}}
-
-def _gem_add_usage(model, meta):
-    """Fold one call's usageMetadata into the running local tally."""
-    if not meta:
-        return
-    pin = int(meta.get("promptTokenCount", 0) or 0)
-    pout = int(meta.get("candidatesTokenCount", 0) or 0)
-    if not pout:
-        pout = max(0, int(meta.get("totalTokenCount", 0) or 0) - pin)
-    ci, co = _price_for(model)
-    cost = pin / 1e6 * ci + pout / 1e6 * co
-    st = _gem_state()
-    u = st.get("usage") or _blank_usage()
-    u["calls"] = u.get("calls", 0) + 1
-    u["in"] = u.get("in", 0) + pin
-    u["out"] = u.get("out", 0) + pout
-    u["cost"] = round(u.get("cost", 0.0) + cost, 6)
-    e = u.setdefault("by_model", {}).setdefault(
-        model, {"calls": 0, "in": 0, "out": 0, "cost": 0.0})
-    e["calls"] += 1; e["in"] += pin; e["out"] += pout
-    e["cost"] = round(e["cost"] + cost, 6)
-    _gem_set(usage=u)
-
-def reset_gemini_usage():
-    _gem_set(usage=_blank_usage())
-
-def gemini_key():
-    try:
-        for ln in open(GEMINI_KEY_FILE, encoding="utf-8"):
-            ln = ln.strip()
-            if ln:
-                return ln
-    except Exception:
-        pass
-    return ""
-
-def gemini_have_key():
-    return bool(gemini_key())
-
-def _gem_state():
-    try:
-        return json.load(open(GEMINI_STATE_FILE, encoding="utf-8"))
-    except Exception:
-        return {"last_error": "", "last_model": ""}
-
-def _gem_set(**kw):
-    st = _gem_state(); st.update(kw)
-    try:
-        os.makedirs(WEB_DIR, exist_ok=True)
-        json.dump(st, open(GEMINI_STATE_FILE, "w", encoding="utf-8"))
-    except Exception:
-        pass
-    return st
-
-def save_gemini_key(raw):
-    """Store the first non-empty line of whatever the user picked. We never echo
-    it back; only the working file keeps it."""
-    key = ""
-    for ln in (raw or "").splitlines():
-        ln = ln.strip()
-        if ln:
-            key = ln
-            break
-    key = key.strip().strip('"').strip("'")
-    if not key:
-        return False, "That file had no key on its first line."
-    try:
-        os.makedirs(WEB_DIR, exist_ok=True)
-        with open(GEMINI_KEY_FILE, "w", encoding="utf-8") as f:
-            f.write(key + "\n")
-        try:
-            os.chmod(GEMINI_KEY_FILE, 0o600)
-        except Exception:
-            pass
-    except Exception as e:
-        return False, "Could not save the key: %s" % e
-    _gem_set(last_error="")
-    return True, ""
-
-def gemini_error_message(status, body):
-    """Turn a raw Gemini failure into one plain sentence the user can act on."""
-    b = (body or "").lower()
-    if status == 400 and ("api_key_invalid" in b or "api key not valid" in b):
-        return "Gemini key looks invalid. Pick the right .txt key file again."
-    if status == 400:
-        return "Gemini rejected the request (400). The key or request was malformed."
-    if status in (401, 403) or "permission_denied" in b or "expired" in b:
-        return ("Gemini key was refused (expired, revoked, or billing not "
-                "enabled for this model).")
-    if status == 429 or "resource_exhausted" in b or "quota" in b:
-        return "Gemini quota or rate limit hit. Wait a bit or check your plan."
-    if status == 404:
-        return "Gemini model not found (it may have been retired)."
-    if status and status >= 500:
-        return "Gemini server error. Try again shortly."
-    return "Gemini request failed (%s)." % (status or "network")
-
-# statuses that no other model will fix: stop climbing and surface them.
-_GEM_HARD = {400, 401, 403, 429}
-
-def gemini_generate(prompt, validate=None, models=None, temperature=0.0,
-                    max_out=2048, extra_parts=None):
-    """Call the cheapest model that returns a valid answer. `validate` gets the
-    raw text and returns a parsed payload (truthy) on success or None to climb.
-    Returns (payload_or_text, model_used, error_message)."""
-    key = gemini_key()
-    if not key:
-        return None, "", "No Gemini key saved yet."
-    last_err = "No model produced a usable answer."
-    for model in (models or GEMINI_MODELS):
-        url = (GEMINI_ENDPOINT % model) + "?key=" + urllib.parse.quote(key)
-        parts = [{"text": prompt}] + list(extra_parts or [])
-        payload = {
-            "contents": [{"parts": parts}],
-            "generationConfig": {"temperature": temperature,
-                                 "maxOutputTokens": max_out,
-                                 "responseMimeType": "application/json"},
-        }
-        req = urllib.request.Request(
-            url, data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=45) as r:
-                raw = r.read().decode("utf-8", "replace")
-            obj = json.loads(raw)
-            _gem_add_usage(model, obj.get("usageMetadata"))
-            text = ""
-            for cand in obj.get("candidates", []):
-                for part in cand.get("content", {}).get("parts", []):
-                    text += part.get("text", "")
-            text = text.strip()
-            if validate is None:
-                _gem_set(last_error="", last_model=model)
-                return text, model, ""
-            parsed = validate(text)
-            if parsed is not None:
-                _gem_set(last_error="", last_model=model)
-                return parsed, model, ""
-            last_err = "Model %s answered but the result did not check out." % model
-            continue                          # climb to a stronger model
-        except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8", "replace")
-            except Exception:
-                pass
-            msg = gemini_error_message(e.code, body)
-            if e.code in _GEM_HARD:
-                _gem_set(last_error=msg, last_model=model)
-                return None, model, msg          # no point climbing
-            last_err = msg                       # 404/5xx: try next model
-            continue
-        except Exception as e:
-            last_err = gemini_error_message(0, str(e))
-            continue
-    _gem_set(last_error=last_err)
-    return None, "", last_err
-
-def _extract_json(text):
-    """Best-effort: find the first JSON object/array in a model reply."""
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*", "", text).strip().rstrip("`").strip()
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    for op, cl in (("{", "}"), ("[", "]")):
-        a = text.find(op); b = text.rfind(cl)
-        if a >= 0 and b > a:
-            try:
-                return json.loads(text[a:b+1])
-            except Exception:
-                pass
-    return None
-
-# ---------- Gemini: title + one-line summary (one cheap call) ---------------
-def gemini_title_summary(text):
-    """Returns {ai_title, summary}. This never replaces the app's own title
-    (the first lines of the text); it is an extra label for easy browsing."""
-    snippet = text.strip()
-    if len(snippet) > 6000:
-        snippet = snippet[:6000]
-    prompt = (
-        "You label reading material. Read the text and return JSON only, exactly "
-        '{"ai_title": "...", "summary": "..."} . ai_title is at most 8 words, no '
-        "quotes. summary is ONE sentence, at most 24 words, plain and concrete. "
-        "Text follows:\n\n" + snippet)
-
-    def val(t):
-        o = _extract_json(t)
-        if isinstance(o, dict) and o.get("ai_title") and o.get("summary"):
-            return {"ai_title": str(o["ai_title"])[:80].strip(),
-                    "summary": str(o["summary"])[:200].strip()}
-        return None
-    obj, model, err = gemini_generate(prompt, validate=val, max_out=256)
-    return obj, err
-
-# ---------- one-file karaoke export: mp3 + txt + json trio ------------------
 def _safe_name(s):
     s = re.sub(r"[^\w .()\-]+", "_", s or "").strip()
     return s[:60] or "export"
@@ -3540,8 +3413,8 @@ def build_trio(tid, vkey, timing="edge", use_ai_meta=False, force=False):
         duration += dur
 
     ai_title = ""; summary = ""
-    if use_ai_meta and gemini_have_key():
-        obj, merr = gemini_title_summary("\n".join(sentences))
+    if False:
+        obj, merr = (None, "")
         if obj:
             ai_title = obj["ai_title"]; summary = obj["summary"]
 
@@ -3883,6 +3756,21 @@ def api_preview_hr(vid):
                 os.replace(mp3 + ".part", mp3)
                 sp_note_usage(_sp_last, body.get("billable_characters_count"))
     return send_file(mp3, mimetype="audio/mpeg")
+
+
+@app.route("/api/keys/import", methods=["POST"])
+def api_keys_import():
+    """ONE picker for every key the app uses. No provider question is asked."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file"}), 400
+    raw = f.read().decode("utf-8", "replace")
+    return jsonify(route_import(raw))
+
+
+@app.route("/api/keys")
+def api_keys():
+    return jsonify({"keys": route_list()})
 
 
 @app.route("/api/groq/status")
@@ -4365,72 +4253,6 @@ def api_offline_delete_all():
         if offline_delete(m["name"]):
             n += 1
     return jsonify({"ok": True, "deleted": n})
-
-# ---------- Gemini key + status ----------
-@app.route("/api/gemini/status")
-def api_gemini_status():
-    st = _gem_state()
-    u = st.get("usage") or _blank_usage()
-    return jsonify({"configured": gemini_have_key(),
-                    "last_error": st.get("last_error", ""),
-                    "last_model": st.get("last_model", ""),
-                    "models": GEMINI_MODELS,
-                    "usage": u,
-                    "usage_note": ("Estimated from token counts. Gemini has no "
-                                   "public endpoint for remaining credit, so "
-                                   "this is a local running total, not a bill.")})
-
-@app.route("/api/gemini/usage/reset", methods=["POST"])
-def api_gemini_usage_reset():
-    reset_gemini_usage()
-    return jsonify({"ok": True})
-
-@app.route("/api/gemini/key", methods=["POST"])
-def api_gemini_key():
-    raw = ""
-    if request.files:
-        f = next(iter(request.files.values()))
-        raw = f.read().decode("utf-8", "replace")
-    else:
-        data = request.get_json(force=True, silent=True) or {}
-        raw = data.get("key", "")
-    ok, err = save_gemini_key(raw)
-    if not ok:
-        return jsonify({"error": err}), 400
-    return jsonify({"configured": True})
-
-@app.route("/api/gemini/forget", methods=["POST"])
-def api_gemini_forget():
-    try:
-        os.remove(GEMINI_KEY_FILE)
-    except Exception:
-        pass
-    _gem_set(last_error="")
-    return jsonify({"configured": False})
-
-# ---------- optional: title + one-line summary for an archived text ----------
-@app.route("/api/library/<tid>/enrich", methods=["POST"])
-def api_library_enrich(tid):
-    if not os.path.isdir(os.path.join(LIB_DIR, tid)):
-        abort(404)
-    if not gemini_have_key():
-        return jsonify({"error": "No Gemini key saved yet."}), 400
-    obj, err = gemini_title_summary(clean_text(lib_text(tid)))
-    if not obj:
-        return jsonify({"error": err or "Gemini could not summarise this."}), 400
-    mf = os.path.join(LIB_DIR, tid, "meta.json")
-    try:
-        meta = json.load(open(mf, encoding="utf-8"))
-    except Exception:
-        meta = {}
-    meta["ai_title"] = obj["ai_title"]
-    meta["summary"] = obj["summary"]
-    try:
-        json.dump(meta, open(mf, "w", encoding="utf-8"), ensure_ascii=False)
-    except Exception:
-        pass
-    return jsonify({"title": meta.get("title", ""),
-                    "ai_title": meta["ai_title"], "summary": meta["summary"]})
 
 def _bg_wake_lock():
     # when running detached in the background, hold our own wake lock so the
@@ -5061,6 +4883,21 @@ body.mode-edit .doc.mdhidden{display:none}
 .group.g-voice{--gc:var(--screen);
   background:linear-gradient(rgba(70,150,230,.07),rgba(70,150,230,.07)),var(--panel)}
 .group.g-groq{--gc:#e879f9}
+.group.g-keys{--gc:#fbbf24}
+.keylist{display:flex; flex-direction:column; gap:6px; margin-top:4px}
+.keyrow{display:flex; align-items:center; gap:8px; padding:8px 10px;
+  border:1px solid var(--line); border-radius:10px; background:var(--panel)}
+.keyrow .kp{flex:0 0 auto; font-size:9px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--faint); min-width:62px}
+.keyrow .km{flex:0 0 auto; font-family:ui-monospace,monospace; font-size:11px;
+  color:var(--text)}
+.keyrow .kl{flex:1; min-width:0; font-size:11px; color:var(--faint);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.keyrow .ks{flex:0 0 auto; font-size:9px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--good)}
+.keyrow.dead{opacity:.55}
+.keyrow.dead .ks{color:var(--bad)}
+.keyrow .kn{flex:0 0 auto; font-size:10px; color:var(--faint); min-width:16px}
 .group.g-adv{--gc:var(--teal);
   background:linear-gradient(rgba(63,185,200,.06),rgba(63,185,200,.06)),var(--panel)}
 /* inside a card the rows sit on the sheet colour, one step back from the card,
@@ -5187,7 +5024,7 @@ body.mode-edit .doc.mdhidden{display:none}
   max-width:90%; opacity:0; transition:opacity .2s; pointer-events:none}
 .toast.show{opacity:1}
 
-/* ---------- v2: tabs, offline reader, help, gemini ---------- */
+/* ---------- v2: tabs, offline reader, help ---------- */
 .topbar{display:flex; align-items:center; gap:6px; margin-bottom:8px}
 nav.tabs{display:flex; gap:6px; flex:1}
 .tab{border:1px solid var(--line); background:var(--panel); color:var(--dim);
@@ -5677,7 +5514,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.22 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.23 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -5760,28 +5597,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
         is fetched, opened or decoded at the moment of the handover, so the
         reading runs on without a break.</p>
 
-      <h3>Gemini (optional)</h3>
-      <p>If you add a Google Gemini API key, the app can name and one line
-        summarise your texts so the archive is easy to skim. Word timing does
-        not use Gemini at all: it is measured locally from the audio itself.
-        To add the key, open Settings and choose a plain <code>.txt</code> file
-        that contains only the key on its first line. The key is kept in the
-        app folder and never shown again. You are only told if Gemini reports a
-        problem, such as an expired key or a used up quota.</p>
-      <p>The app always starts with the cheapest Gemini model and only steps up
-        to a stronger one when a cheaper answer does not check out, so it spends
-        as little as possible. Timing help uses the speech engine's own word
-        marks as the truth and asks Gemini only to line the words up to them, it
-        never invents times.</p>
-
-      <div style="margin-top:18px" class="keybox">
-        <div class="keyhead">Gemini key
-          <span class="keystate" id="helpKeyState">not set</span></div>
-        <label class="keybtn">Choose .txt key file
-          <input type="file" id="helpKeyFile" accept=".txt,text/plain" hidden></label>
-        <button class="keybtn ghost" id="helpKeyForget">Forget key</button>
-        <div class="keyerr" id="helpKeyErr"></div>
-      </div>
     </div>
   </section>
 </main>
@@ -5880,8 +5695,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="keybox">
       <div class="keyhead">Key ring
         <span class="keystate" id="spKeyState">not set</span></div>
-      <label class="keybtn">Choose .txt key file
-        <input type="file" id="spKeyFile" accept=".txt,text/plain" hidden></label>
       <button class="keybtn ghost" id="spRefresh">Test again</button>
       <button class="keybtn ghost" id="spForget">Forget</button>
       <div class="keyerr" id="spKeyErr"></div>
@@ -5895,6 +5708,18 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <!-- Then the rest, ordered by how often a thing is touched, not how
        important it sounds. Each card is tinted so the block you want is
        findable by colour. -->
+  <div class="group g-keys" data-eng="app">
+    <div class="gtitle">Keys</div>
+    <div class="chips" style="margin:6px 0">
+      <button class="chip" id="keyPick">Choose .txt key file</button>
+      <button class="chip" id="keyRefresh">Refresh</button>
+    </div>
+    <div class="langhint">One file, any mess. Each key is filed by its own
+      shape; you are never asked which is which.</div>
+    <div class="keylist" id="keyList"></div>
+    <input type="file" id="keyImport" accept=".txt,text/plain" style="display:none">
+  </div>
+
   <div class="group g-text" data-eng="app">
     <h3>Text</h3>
     <div class="wsub">Letter size</div>
@@ -6012,11 +5837,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <div class="langhint">Groq is asked whether the text is English. Anything
       that is not English is Croatian. Only used when the button says AUTO.</div>
     <div class="chips" style="margin:6px 0">
-      <button class="chip" id="groqPick">Choose .txt key file</button>
       <button class="chip" id="groqTest">Test</button>
     </div>
     <div class="setlegend" id="groqInfo">no key</div>
-    <input type="file" id="groqFile" accept=".txt,text/plain" style="display:none">
   </div>
 
   <div class="group g-adv" data-eng="app">
@@ -6025,15 +5848,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="chromeTog">Open in Chrome</button>
     </div>
     <div class="langhint">Ask for Chrome by name instead of the phone default.</div>
-    <div class="wsub">Gemini key (optional)</div>
-    <div class="keybox">
-      <div class="keyhead">API key
-        <span class="keystate" id="keyState">not set</span></div>
-      <label class="keybtn">Choose .txt key file
-        <input type="file" id="keyFile" accept=".txt,text/plain" hidden></label>
-      <button class="keybtn ghost" id="keyForget">Forget</button>
-      <div class="keyerr" id="keyErr"></div>
-    </div>
     <div class="wsub">Word timing</div>
     <div class="timing-help">Timing is measured from the audio itself: after a
       sentence is spoken, the app listens to the finished clip, finds where
@@ -6041,13 +5855,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       word to that waveform. It is automatic, free, and works offline. If the
       red word still feels early or late on a particular voice, nudge it with
       the Sync slider in the player settings.</div>
-    <div class="chips" style="margin-top:12px">
-      <button class="chip" id="aiMetaTog">AI title &amp; summary</button>
-    </div>
-    <div class="gem-usage" id="gemUsage">No Gemini usage yet.</div>
-    <button class="gem-reset" id="gemReset">Reset usage counter</button>
-    <small class="sheet-note">Used only when you export or summarise. The key
-      stays in the app folder and only errors are shown.</small>
   </div>
 </div>
 
@@ -6201,7 +6008,6 @@ const ST = {
   rgbSent: [255,217,59], rgbWord: [226,59,78], rgbFont: [255,255,255],
   rgbText: null,
   wordoffsets: {}, aimeta:false, resume:true,
-  gemini:{configured:false,last_error:""},
 };
 
 /* Three elements, not two. One speaks, one holds the next sentence already
@@ -6786,6 +6592,54 @@ function loadCroVoices(){
   }).catch(()=>{});
 }
 
+/* ONE picker for every key. The list below it is the FALLBACK ORDER: the
+   first live key does the work and, if it is refused, the next takes over. */
+function renderKeyList(){
+  api("/api/keys").then(r=>r.json()).then(d=>{
+    const box=$("#keyList"); if(!box) return;
+    box.innerHTML="";
+    const keys=d.keys||[];
+    if(!keys.length){
+      const p=document.createElement("div");
+      p.className="langhint"; p.textContent="No keys yet.";
+      box.appendChild(p); return;
+    }
+    keys.forEach(k=>{
+      const row=document.createElement("div");
+      row.className="keyrow"+(k.state==="dead"?" dead":"");
+      row.innerHTML =
+        '<span class="kp">'+k.provider+'</span>'+
+        '<span class="kn">'+k.order+'</span>'+
+        '<span class="km">'+k.mask+'</span>'+
+        '<span class="kl">'+(k.label||"")+'</span>'+
+        '<span class="ks">'+k.state+'</span>';
+      box.appendChild(row);
+    });
+  }).catch(()=>{});
+}
+function wireKeys(){
+  const pick=$("#keyPick"), file=$("#keyImport"), ref=$("#keyRefresh");
+  if(pick && file){
+    pick.onclick = ()=> file.click();
+    file.onchange = ()=>{
+      const f=file.files && file.files[0]; if(!f) return;
+      const fd=new FormData(); fd.append("file", f);
+      toast("Reading the file...");
+      api("/api/keys/import",{method:"POST", body:fd}).then(r=>r.json()).then(d=>{
+        if(d.error){ toast(d.error); return; }
+        const bits=[];
+        Object.keys(d.added||{}).forEach(p=>bits.push(d.added[p]+" "+p));
+        const other=Object.keys(d.other||{});
+        let msg = bits.length ? ("Added " + bits.join(", ")) : "Nothing new to add";
+        if(other.length) msg += " \u00b7 " + other.join(", ") + " not needed here";
+        toast(msg);
+        renderKeyList(); renderGroq(); try{ renderSpKeyList(); }catch(e){}
+      }).catch(()=>toast("Could not read that file."));
+      file.value="";
+    };
+  }
+  if(ref) ref.onclick = ()=>{ renderKeyList(); renderGroq(); };
+}
 function renderGroq(){
   api("/api/groq/status").then(r=>r.json()).then(d=>{
     const el=$("#groqInfo"); if(!el) return;
@@ -6796,20 +6650,7 @@ function renderGroq(){
   }).catch(()=>{});
 }
 function wireGroq(){
-  const pick=$("#groqPick"), file=$("#groqFile"), test=$("#groqTest");
-  if(pick && file){
-    pick.onclick = ()=> file.click();
-    file.onchange = ()=>{
-      const f=file.files && file.files[0]; if(!f) return;
-      const fd=new FormData(); fd.append("file", f);
-      toast("Reading the key file...");
-      api("/api/groq/keyfile", {method:"POST", body:fd}).then(r=>r.json()).then(d=>{
-        toast(d.error ? d.error : (d.keys + " Groq key(s) kept"));
-        renderGroq();
-      }).catch(()=>toast("Could not read that file."));
-      file.value="";
-    };
-  }
+  const test=$("#groqTest");
   if(test) test.onclick = ()=>{
     toast("Asking Groq...");
     api("/api/groq/test", {method:"POST"}).then(r=>r.json()).then(d=>{
@@ -8192,7 +8033,7 @@ function showOfflineReader(){ hideAllViews();
   $("#offlineReaderView").classList.remove("hidden");
   document.body.classList.remove("onhome","inreader"); setTab("offline"); }
 function showHelp(){ hideAllViews(); $("#helpView").classList.remove("hidden");
-  document.body.classList.remove("inreader","onhome"); setTab("help"); refreshGemini(); }
+  document.body.classList.remove("inreader","onhome"); setTab("help"); }
 function goTab(name){
   if(name==="offline"){ showOfflineList(); }
   else if(name==="help"){ showHelp(); }
@@ -8300,7 +8141,7 @@ function renderLibrary(){
     const btns = [
       mkBtn("Open","iconbtn open",()=>openText(m.id)),
       mkBtn("Export","iconbtn exp",()=>exportText(m.id))];
-    if(ST.gemini && ST.gemini.configured){
+    if(false){
       btns.push(mkBtn("AI","iconbtn",()=>enrichText(m.id)));
     }
     btns.push(mkBtn("Delete","iconbtn del",()=>delText(m.id,m.title)));
@@ -8353,15 +8194,15 @@ function loadLibrary(){
   });
 }
 function enrichText(tid){
-  toast("Asking Gemini for a title and summary...");
+  toast("Summarising...");
   api("/api/library/"+tid+"/enrich",{method:"POST"})
     .then(r=>r.json().then(j=>({ok:r.ok,j})))
     .then(({ok,j})=>{
-      if(!ok){ toast(j.error||"Gemini could not summarise this."); refreshGemini(); return; }
+      if(!ok){ toast(j.error||"Could not summarise this."); return; }
       const m = LIB_CACHE.find(x=>x.id===tid);
       if(m){ m.title=j.title||m.title; m.summary=j.summary||""; }
       renderLibrary(); toast("Updated.");
-    }).catch(()=>toast("Gemini request failed."));
+    }).catch(()=>toast("That request failed."));
 }
 function mkBtn(txt,cls,fn){ const b=document.createElement("button");
   b.className=cls; b.textContent=txt; b.onclick=fn; return b; }
@@ -8380,10 +8221,9 @@ function exportText(tid){
       body:JSON.stringify({tid, vkey:ST.vkey, meta:!!ST.aimeta})})
     .then(r=>r.json().then(j=>({ok:r.ok,j})))
     .then(({ok,j})=>{
-      if(!ok){ toast(j.error||"Export failed."); refreshGemini(); return; }
+      if(!ok){ toast(j.error||"Export failed."); return; }
       if(j.already){ toast("Already exported in "+(j.voice||vn)+"."); return; }
       toast("Saved to MA Reader Audio"+(j.timing_source==="pcm"?" (waveform timing)":""));
-      refreshGemini();
     }).catch(()=>toast("Export failed."));
 }
 
@@ -9193,11 +9033,11 @@ function makeOffline(){
         .then(r=>r.json().then(j=>({ok:r.ok,j}))))
     .then(({ok,j})=>{
       btn.disabled=false; btn.textContent=old;
-      if(!ok){ toast(j.error||"Could not build offline files."); refreshGemini(); return; }
+      if(!ok){ toast(j.error||"Could not build offline files."); return; }
       $("#pasteBox").value=""; if(typeof updatePasteHint==="function") updatePasteHint();
       if(j.already){ toast("Already in Offline ("+(j.voice||vn)+")."); }
       else { toast("Saved to Offline"+(j.timing_source==="pcm"?" (waveform timing)":"")); }
-      refreshGemini(); showOfflineList();
+      showOfflineList();
     }).catch(()=>{ btn.disabled=false; btn.textContent=old;
       toast("Could not build offline files."); });
 }
@@ -9209,16 +9049,6 @@ function saveOffPos(){
      body:JSON.stringify({name:OFF.name, pos})}).catch(()=>{});
 }
 
-function paintUsage(){
-  const box=$("#gemUsage"); if(!box) return;
-  const g=ST.gemini||{}; const u=g.usage||{};
-  if(!g.configured && !(u.calls>0)){ box.textContent="Add a key to use Gemini. No usage yet."; return; }
-  const cost=(u.cost||0), calls=(u.calls||0), inp=(u.in||0), out=(u.out||0);
-  let html="<b>Estimated spend:</b> $"+cost.toFixed(4)+" &middot; "+calls+" calls<br>"+
-    "tokens in "+inp.toLocaleString()+" &middot; out "+out.toLocaleString();
-  if(g.usage_note) html+="<div class='note'>"+g.usage_note+"</div>";
-  box.innerHTML=html;
-}
 
 /* ================= v9: offline reader (one sentence at a time) ============ */
 /* The offline player mirrors the online Read tab. Each sentence is its own
@@ -9611,40 +9441,6 @@ function offBack(){
   showOfflineList();
 }
 
-/* ---------- gemini status + key upload ---------- */
-function refreshGemini(){
-  return api("/api/gemini/status").then(r=>r.json()).then(g=>{
-    ST.gemini=g; paintGemini(); return g;
-  }).catch(()=>{});
-}
-function paintGemini(){
-  const g=ST.gemini||{configured:false,last_error:""};
-  [["#keyState","#keyErr"],["#helpKeyState","#helpKeyErr"]].forEach(([sSel,eSel])=>{
-    const s=$(sSel), e=$(eSel);
-    if(s){ s.textContent = g.configured? "saved":"not set";
-      s.classList.toggle("ok", !!g.configured); }
-    if(e){ e.textContent = g.last_error||""; }
-  });
-  const mt=$("#aiMetaTog");
-  if(mt) mt.classList.toggle("on", !!ST.aimeta);
-  paintUsage();
-}
-function uploadKey(file){
-  if(!file) return;
-  const fd=new FormData(); fd.append("key", file, file.name||"key.txt");
-  api("/api/gemini/key",{method:"POST", body:fd})
-    .then(r=>r.json().then(j=>({ok:r.ok,j})))
-    .then(({ok,j})=>{
-      if(!ok){ toast(j.error||"Could not save the key."); }
-      else toast("Gemini key saved.");
-      refreshGemini().then(()=>{ if(!$("#homeView").classList.contains("hidden")) renderLibrary(); });
-    }).catch(()=>toast("Could not save the key."));
-}
-function forgetKey(){
-  api("/api/gemini/forget",{method:"POST"}).then(()=>{ toast("Key forgotten.");
-    refreshGemini().then(()=>{ if(!$("#homeView").classList.contains("hidden")) renderLibrary(); }); });
-}
-
 function bindV2(){
   document.querySelectorAll("#tabs .tab").forEach(t=>{
     if(t.id==="playerJump"){ t.onclick=jumpToPlayer; return; }
@@ -9669,22 +9465,12 @@ function bindV2(){
   $("#saveOfflineBtn").onclick=makeOffline;
   const rt=$("#resumeTog"); if(rt) rt.onclick=()=>{ ST.resume=!ST.resume;
     refreshToggles(); persist(); };
-  const gr=$("#gemReset"); if(gr) gr.onclick=()=>{
-    api("/api/gemini/usage/reset",{method:"POST"}).then(()=>{ toast("Usage counter reset."); refreshGemini(); }); };
   $("#offSeek").addEventListener("input", e=>{
     const n=Math.max(1, OFF.sents.length-1);
     const i=clampOff(Math.round((e.target.value/1000)*n));
     if(i!==OFF.idx) offJump(i, OFF.playing);
   });
 
-  const kf=$("#keyFile"); if(kf) kf.addEventListener("change",
-    e=>{ uploadKey(e.target.files[0]); e.target.value=""; });
-  const hkf=$("#helpKeyFile"); if(hkf) hkf.addEventListener("change",
-    e=>{ uploadKey(e.target.files[0]); e.target.value=""; });
-  const kfo=$("#keyForget"); if(kfo) kfo.onclick=forgetKey;
-  const hkfo=$("#helpKeyForget"); if(hkfo) hkfo.onclick=forgetKey;
-  const mt=$("#aiMetaTog"); if(mt) mt.onclick=()=>{ ST.aimeta=!ST.aimeta;
-    paintGemini(); persist(); };
   const la=$("#langAll"); if(la) la.onclick=()=>setAllLangs(true);
   const ln=$("#langNone"); if(ln) ln.onclick=()=>setAllLangs(false);
 }
@@ -9799,13 +9585,12 @@ function boot(){
     }
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
     renderEdgeGrid(); renderSpKeyList(); renderSpDead(); loadCroVoices();
-    renderGroq(); wireGroq();
+    renderGroq(); wireGroq(); renderKeyList(); wireKeys();
     mediaSetup(); wireFloat(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyLag(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
     ST.aimeta = !!st.aimeta; ST.resume = (st.resume!==false);
-    ST.gemini = {configured:false, last_error:""};
     /* Everything is restored. From here it is safe to write. */
     booted = true;
     bindV2(); refreshToggles(); setMode(ST.mode); showHome();
@@ -9814,7 +9599,6 @@ function boot(){
        act of pasting, which is a gesture, which is also the only thing the
        browser will accept a full screen request from. Doing it at load would
        have been both unwanted and, in a tab, impossible. */
-    refreshGemini();
   }).catch(()=>{ setStatus("Could not reach the server."); });
 }
 boot();
@@ -10086,7 +9870,6 @@ if [ -n "$STASH" ] && [ -d "$STASH" ]; then
     fi
   done
   chmod 600 "$APPDIR/speechify_api.txt" 2>/dev/null || true
-  chmod 600 "$APPDIR/gemini_key.txt" 2>/dev/null || true
   rm -rf "$STASH"
   [ "$BACK" -gt 0 ] && printf '   %s%s file(s) put back: you do not have to enter a key again%s\n' \
     "$GREEN" "$BACK" "$OFF"
@@ -10326,7 +10109,7 @@ echo "              Settings has Reverse swipe if you want it the other way."
 echo " Immersive:   double tap the middle of the page to strip the controls"
 echo "              away and start reading; double tap again to stop."
 echo " Terminal:    q quits, o opens the page again, b goes to background."
-echo " Help tab:    explains the folders (auto created) and the Gemini key."
+echo " Help tab:    explains the folders, created automatically."
 echo ""
 echo " For Export to reach Downloads, run 'termux-setup-storage' once."
 echo " Optional: 'pkg install ffmpeg' gives exact clip lengths (a frame parser"
