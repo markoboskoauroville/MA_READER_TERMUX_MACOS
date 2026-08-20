@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.28
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.29
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.28%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.29%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -5457,6 +5457,17 @@ body.mode-edit .doc.mdhidden{display:none}
   color:var(--faint); margin-top:2px}
 /* One X and nothing else. The version sits in the corner beside it, so it
    costs no row of its own. */
+/* The head carries three things now: the two toggles on the left, the X in
+   the middle, and the version in the corner. The X stays centred because it
+   is the thing a thumb reaches for blind. */
+.headtogs{position:absolute; left:16px; top:50%; transform:translateY(-50%);
+  display:flex; gap:6px}
+.htog{border:1px solid var(--line); background:var(--panel);
+  color:var(--text); border-radius:11px; padding:9px 11px;
+  font-size:11px; font-weight:700; letter-spacing:.06em; line-height:1}
+.htog.sp{border-color:var(--tune);
+  background:color-mix(in srgb, var(--tune) 16%, var(--panel))}
+.htog.auto b{font-size:10px}
 .sheet-head{position:sticky; top:0; z-index:6; background:var(--bg2);
   display:flex; align-items:center; justify-content:center;
   margin:0 -16px 12px; padding:2px 16px 10px; border-bottom:1px solid var(--line)}
@@ -5619,8 +5630,7 @@ body.hassession .tab.player{display:block}
 .engtabs{display:flex; gap:8px; margin:2px 0 14px; align-items:stretch}
 /* The language button is an engtab like the others, but it names a state
    rather than a destination, so it is always lit. */
-#langBtn{flex:0 0 auto; min-width:64px}
-#langBtn.auto b{font-size:11px; letter-spacing:.04em}
+#langBtn{min-width:52px}
 #langBtn.on b{letter-spacing:.06em}
 .engtab{flex:1; border:1px solid var(--line); background:var(--panel);
   color:var(--dim); border-radius:13px; padding:11px 8px 9px; text-align:center;
@@ -5985,7 +5995,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.28 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.29 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6076,6 +6086,14 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 <div class="backdrop" id="backdrop"></div>
 <div class="sheet" id="sheet">
   <div class="sheet-head">
+    <!-- The two things changed most often, so they sit above everything and
+         are reachable without scrolling: WHICH ENGINE speaks, and WHICH
+         LANGUAGE is being read. Both name the state they are in and flip on
+         a press. -->
+    <div class="headtogs">
+      <button class="htog" id="engBtn"><b>EDGE</b></button>
+      <button class="htog" id="langBtn"><b>ENG</b></button>
+    </div>
     <button class="sheet-x" id="sheetX" title="Close">&#10005;</button>
     <span class="sheet-ver" id="appVerTop"></span>
   </div>
@@ -6103,14 +6121,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <button class="engtab" data-pane="edge"><b>Edge</b></button>
     <button class="engtab" data-pane="speechify"><b>Speechify</b></button>
     <button class="engtab" data-pane="app"><b>Settings</b></button>
-    <!-- Which language the app is reading. Everything else follows from it:
-         which voices appear at the top, which appear in the grids, and which
-         voice a fresh choice lands on.
-         ONE button, the same size as its neighbours, showing the language in
-         force. Pressing it flips to the other. A split control put two small
-         zones where one whole button belongs, and half of it was always the
-         wrong half to press. -->
-    <button class="engtab" id="langBtn"><b>ENG</b></button>
   </div>
 
 
@@ -6144,13 +6154,15 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
     <!-- Two short lists of radio rows rather than a paged catalogue. Ported
          from TTT_MINI: a radio says plainly which one is chosen, where a grid
          of chips has to be read twice. -->
+    <!-- English first: it is the language read most, and the order of a list
+         is a claim about what matters. -->
+    <div class="wsub">English</div>
+    <div class="radios" id="engList"></div>
+
     <div class="wsub">Croatian</div>
     <div class="langhint">Speechify has no Croatian voice &mdash; none exists on
       any model. These read Croatian with a foreign accent, best first.</div>
     <div class="radios" id="croList"></div>
-
-    <div class="wsub">English</div>
-    <div class="radios" id="engList"></div>
 
     <div class="wsub">Keys</div>
     <div class="keybox">
@@ -6820,6 +6832,7 @@ function setVoice(id, quiet){
    Picking Edge or Speechify still switches the engine, because that is what
    those two panes are for; picking Settings changes nothing about the voice. */
 function applyEngineCards(){
+  try{ renderLangBtn(); }catch(e){}
   const pane = ST.pane || ST.engine || "edge";
   document.querySelectorAll("#engTabs .engtab").forEach(b=>
     b.classList.toggle("on", b.dataset.pane === pane));
@@ -6858,8 +6871,16 @@ function setLang(l){
    went on showing the old word. One painter, called by everyone who can
    change the language, is the whole fix. */
 function renderLangBtn(){
+  const eb = $("#engBtn");
+  if(eb){
+    const sp = ST.engine === "speechify";
+    eb.innerHTML = "<b>" + (sp ? "SPEECHIFY" : "EDGE") + "</b>";
+    eb.classList.add("sp");
+    eb.title = sp ? "Speechify is speaking. Tap for Edge."
+                  : "Edge is speaking. Tap for Speechify.";
+  }
   const lb = $("#langBtn"); if(!lb) return;
-  lb.classList.add("on");          /* always lit: it names a state, not a tab */
+  lb.classList.add("sp");
   const l = ST.lang || "eng";
   lb.innerHTML = "<b>" + (l === "hr" ? "HR" : l === "auto" ? "AUTO" : "ENG") + "</b>";
   lb.classList.toggle("auto", l === "auto");
@@ -8825,9 +8846,23 @@ function bind(){
   /* the two engine buttons at the top of Settings */
   document.querySelectorAll("#engTabs .engtab").forEach(b=>{
     b.onclick = ()=> setPane(b.dataset.pane);
-  { const lb = $("#langBtn");
-    if(lb) lb.onclick = ()=> setLang(nextLang()); }
   });
+  /* The two head toggles. Bound once, outside the tab loop; they were inside
+     it, which set the same handler three times and left the engine toggle
+     unbound altogether. */
+  { const lb = $("#langBtn");
+    if(lb) lb.onclick = ()=> setLang(nextLang());
+  }
+  { const eb = $("#engBtn");
+    if(eb) eb.onclick = ()=>{
+      /* WHICH ENGINE SPEAKS, which is not the same question as which pane of
+         Settings is open. Changing it leaves the pane where it was. */
+      const want = (ST.engine === "speechify") ? "edge" : "speechify";
+      setEngine(want, true);
+      renderLangBtn(); renderVoices(); persist();
+      toast(want === "speechify" ? "Speechify is speaking" : "Edge is speaking");
+    };
+  }
   /* the Speechify key ring. The file is handed straight to the server; the
      browser reads no key out of it and nothing is ever echoed back. */
   { const kf = $("#spKeyFile");

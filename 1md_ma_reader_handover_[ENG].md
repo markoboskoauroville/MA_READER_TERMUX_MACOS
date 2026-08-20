@@ -308,8 +308,11 @@ is the shipped default. The paged catalogue, the accent buttons, the tick
 boxes and the separate Croatian card are all gone: a radio says plainly which
 one is chosen where a grid of chips has to be read twice.
 
-    Croatian   Lesya (uk) · Beatrice (gb) · Dominika (pl) · Daria (ru)
     English    Beatrice · Imogen · Edmund · Hugh
+    Croatian   Lesya (uk) · Beatrice (gb) · Dominika (pl) · Daria (ru)
+
+English is listed FIRST. The order of a list is a claim about what matters,
+and English is the language read most.
 
 BEATRICE IS IN BOTH LISTS, on a different model in each: simba-multilingual
 for Croatian, simba-english for English. She is one voice with two jobs, and
@@ -828,6 +831,25 @@ a value nobody recognises.
 
 These are DEFAULTS, not overrides: an existing settings file keeps every
 choice already made in it.
+
+## The two toggles in the head
+
+The two things changed most often sit above everything, reachable without
+scrolling, to the left of the X:
+
+    ENGINE     EDGE / SPEECHIFY     which engine SPEAKS
+    LANGUAGE   ENG / HR / AUTO      which language is being READ
+
+Both name the state they are in and flip on a press.
+
+WHICH ENGINE SPEAKS IS NOT WHICH PANE IS OPEN. The Edge and Speechify tabs
+below choose which cards are shown and nothing else; the engine toggle changes
+who talks and leaves the pane exactly where it was. They were one value once
+and that was the source of a whole family of surprises.
+
+The engine toggle reports a choice, it cannot invent a key. Switching to
+Speechify with no key loads the choice and the reading then fails honestly
+rather than silently staying on Edge.
 
 ## The Settings sheet
 
