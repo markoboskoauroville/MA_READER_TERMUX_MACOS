@@ -675,7 +675,37 @@ scroll, and someone listening should not have to be careful where he touches.
 Tapping the sentence already playing now restarts it; the player bar pauses.
 Gone from the client, the page, the Help text, the chips and the server state.
 
-## Two floaters
+## Three floaters
+
+    P        paste and read. ALWAYS the letter P.
+    (o)      a ring with a white dot: full screen on, full screen off
+    (⇆)      back to the last app, and back again
+
+P USED TO BECOME THE EXIT GLYPH inside full screen. That gave two buttons that
+both left full screen and no way at all to paste a second article without
+leaving first, which is the opposite of how this app is read. Leaving is the
+dot's one job; pasting is P's one job; neither borrows the other's.
+
+All three are 56px, all three drag, all three remember their corner as a
+FRACTION of the screen, all three survive into full screen, and all three
+share ONE wireDrag and one clamp.
+
+THE APP SWITCHER NEEDS THE PRIVILEGED SHELL. A web page cannot switch Android
+apps: there is no API for it and there should not be. It goes through the same
+shell maread-adb sets up for the media keys, so it works exactly where they
+work. Without it, it says so rather than doing nothing quietly. It is OFF by
+default for that reason.
+
+Android has no "previous app" keycode. What it has is the recents square, and
+tapping it TWICE lands on the app you were in before, which is what the thumb
+gesture does. So the switch is two taps of KEYCODE_APP_SWITCH sent 120ms
+apart: too fast and the system reads one press, too slow and you are left
+looking at the recents screen.
+
+The switcher is NOT an exit, so it is deliberately absent from the rule that
+brings the corner button back when no exit is on screen.
+
+
 
     P        paste, read, and go full screen if that is asked for
     (o)      a ring with a white dot: full screen on, full screen off

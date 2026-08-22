@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.30
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.31
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.30%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.31%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -3477,7 +3477,8 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
-                  "floatPaste": True, "floatFull": True, "ffX": 0.82, "ffY": 0.58, "voiceBar": True,
+                  "floatPaste": True, "floatFull": True, "ffX": 0.82, "ffY": 0.58,
+                  "floatSwap": False, "fsX": 0.82, "fsY": 0.44, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
                   "croVoice": "lesya", "engVoice": "beatrice_32", "lang": "eng", "langAuto": "eng", "wtime": True,
                   "mode": "read",
@@ -3549,7 +3550,9 @@ def load_state():
     # all and there is no way to drag back something you cannot see.
     st["floatFull"] = bool(st.get("floatFull", True))
     st["floatPaste"] = bool(st.get("floatPaste", True))
-    for _k, _d in (("ffX", 0.82), ("ffY", 0.58), ("fpX", 0.82), ("fpY", 0.72)):
+    st["floatSwap"] = bool(st.get("floatSwap", False))
+    for _k, _d in (("ffX", 0.82), ("ffY", 0.58), ("fpX", 0.82), ("fpY", 0.72),
+                   ("fsX", 0.82), ("fsY", 0.44)):
         try:
             _v = float(st.get(_k, _d))
         except (TypeError, ValueError):
@@ -4402,6 +4405,47 @@ def api_mediakey():
             return jsonify({"ok": True, "route": name, "tried": tried})
     return jsonify({"ok": False, "tried": tried,
                     "error": "No privileged route. Run maread-adb in Termux to "
+                             "set one up, then try again."})
+
+
+APPSWITCH_KEY = "187"          # KEYCODE_APP_SWITCH, the recents square
+
+
+def _sw_routes():
+    """The same ladder the media keys walk, sending the recents key twice.
+
+    Android has no "go to the previous app" keycode. What it has is the
+    recents square, and tapping it TWICE lands on the app you were in before,
+    which is what the thumb gesture does too. So the switch is two taps sent
+    close together, and the pause between them matters: too fast and the
+    system treats it as one press, too slow and it just leaves you looking at
+    the recents screen."""
+    k = APPSWITCH_KEY
+    twice_sh = "input keyevent %s; sleep 0.12; input keyevent %s" % (k, k)
+    return [
+        ("shizuku", ["rish", "-c", twice_sh]),
+        ("adb",     ["adb", "shell", twice_sh]),
+        ("shell",   ["sh", "-c", twice_sh]),
+    ]
+
+
+@app.route("/api/appswitch", methods=["POST"])
+def api_appswitch():
+    """Back to the app you were in before this one.
+
+    A web page cannot switch Android apps: there is no API for it and there
+    should not be. This goes through the privileged shell that maread-adb sets
+    up, the same one the media keys use, so it works exactly where they work
+    and says so plainly where they do not."""
+    global _mk_route
+    tried = []
+    for name, argv in _sw_routes():
+        ok, why = _mk_try(name, argv)
+        tried.append("%s: %s" % (name, "ok" if ok else (why or "refused")))
+        if ok:
+            return jsonify({"ok": True, "route": name, "tried": tried})
+    return jsonify({"ok": False, "tried": tried,
+                    "error": "No privileged shell. Run maread-adb in Termux to "
                              "set one up, then try again."})
 
 
@@ -5839,6 +5883,20 @@ body.fullread .floatf:active{opacity:1}
 body.fullread .floatf .fdot{width:8px; height:8px}
 body.sheetopen .floatf{display:none !important}
 
+/* The app switcher. Same size and drag as the other two. */
+.floats{position:fixed; z-index:80; width:56px; height:56px; border-radius:50%;
+  border:1px solid var(--line); background:var(--panel); color:var(--text);
+  padding:0; display:none; align-items:center; justify-content:center;
+  touch-action:none; box-shadow:0 3px 14px rgba(0,0,0,.45); opacity:.88}
+.floats .sarr{font-size:22px; line-height:1; display:block}
+body.hasfloats .floats{display:flex}
+.floats:active{border-color:var(--tune); opacity:1}
+.floats.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
+body.fullread .floats{opacity:.72; background:rgba(127,127,127,.16);
+  border-color:transparent}
+body.fullread .floats:active{opacity:1}
+body.sheetopen .floats{display:none !important}
+
 /* The catcher. Some browsers will not hand a page the clipboard at all, and
    no amount of asking changes that. So when the quick way is refused, this
    opens: a real text field, already focused, that the phone will happily
@@ -5890,6 +5948,7 @@ body.fullread > *{display:none !important}
 body.fullread > main{display:block !important}
 body.fullread > .floatp{display:flex !important}
 body.fullread > .floatf{display:flex !important}
+body.fullread > .floats{display:flex !important}
 body.fullread > .toast{display:block !important}
 body.fullread > .catchwrap.on{display:flex !important}
 
@@ -6029,7 +6088,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.30 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.31 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6278,6 +6337,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="loopBtn">Loop</button>
       <button class="chip" id="floatTog">Floating paste button</button>
       <button class="chip" id="floatFTog">Floating full screen button</button>
+      <button class="chip" id="floatSTog">Floating app switcher</button>
       <button class="chip" id="bgResumeTog">Resume my music</button>
       <button class="chip" id="bgTestBtn">Test it</button>
     </div>
@@ -6372,6 +6432,13 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
      glyph that changes would be a third thing to learn. -->
 <button class="floatf" id="floatF" title="Full screen on and off. Drag to move.">
   <span class="fdot"></span>
+</button>
+<!-- The third floater: back to whatever app you were in before this one, and
+     back again. The same thing as double-tapping the recents square. It needs
+     the privileged shell that maread-adb sets up, because a web page cannot
+     switch Android apps on its own. -->
+<button class="floats" id="floatS" title="Switch to the last app. Drag to move.">
+  <span class="sarr">&#8646;</span>
 </button>
 
 <div class="catchwrap" id="catchWrap">
@@ -6506,7 +6573,8 @@ const ST = {
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false,
   floatPaste: true, fpX: 0.82, fpY: 0.72,
-  floatFull: true, ffX: 0.82, ffY: 0.58, browser: "chrome",
+  floatFull: true, ffX: 0.82, ffY: 0.58,
+  floatSwap: false, fsX: 0.82, fsY: 0.44, browser: "chrome",
   /* null means never chosen, so the first four can be offered. An empty
      ARRAY means chosen to be none, and must be left alone. Treating those
      two as the same value is what made unticked voices come back on every
@@ -8462,11 +8530,13 @@ function refreshToggles(){
   document.body.classList.toggle("notabs", !!ST.hideTabs);
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#floatFTog"); if(b) b.classList.toggle("on", !!ST.floatFull); }
+  { const b=$("#floatSTog"); if(b) b.classList.toggle("on", !!ST.floatSwap); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
   { const b=$("#voiceBarTog"); if(b) b.classList.toggle("on", !!ST.voiceBar); }
   document.body.classList.toggle("nobar", !ST.voiceBar);
   document.body.classList.toggle("hasfloat", !!ST.floatPaste);
   document.body.classList.toggle("hasfloatf", !!ST.floatFull);
+  document.body.classList.toggle("hasfloats", !!ST.floatSwap);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
@@ -8765,6 +8835,7 @@ function stateBody(){
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         floatFull:!!ST.floatFull, ffX:ST.ffX, ffY:ST.ffY,
+        floatSwap:!!ST.floatSwap, fsX:ST.fsX, fsY:ST.fsY,
         enabledLangs:ST.enabledLangs});
 }
 
@@ -8978,6 +9049,14 @@ function bind(){
           toast(ST.browser === "chrome" ? "Chrome from now on"
                                         : "Whatever the phone prefers");
         }).catch(()=> toast("Could not save that."));
+    };
+  }
+  { const b=$("#floatSTog");
+    if(b) b.onclick = ()=>{
+      ST.floatSwap = !ST.floatSwap;
+      refreshToggles(); persist();
+      if(ST.floatSwap){ placeFloatS(); toast("Needs maread-adb in Termux"); }
+      else toast("App switcher hidden");
     };
   }
   { const b=$("#floatFTog");
@@ -9501,6 +9580,27 @@ function wireFloatF(){
   placeFloatF();
   wireDrag(el, floatFullPress, (x,y)=>{ ST.ffX=x; ST.ffY=y; });
 }
+function placeFloatS(){
+  const el=$("#floatS"); if(!el) return;
+  const fx=(typeof ST.fsX==="number")?ST.fsX:0.82;
+  const fy=(typeof ST.fsY==="number")?ST.fsY:0.44;
+  const [x,y]=clampFloatEl(el, fx*window.innerWidth, fy*window.innerHeight);
+  el.style.left=x+"px"; el.style.top=y+"px";
+}
+/* Back to the app you were in before this one. A web page cannot do this; the
+   server asks the privileged shell that maread-adb sets up, exactly as the
+   media keys already do. Without that shell it says so rather than doing
+   nothing quietly. */
+function floatSwapPress(){
+  api("/api/appswitch", {method:"POST"}).then(r=>r.json()).then(d=>{
+    if(!d.ok) toast(d.error || "No privileged shell. Run maread-adb in Termux.");
+  }).catch(()=> toast("Could not reach the server."));
+}
+function wireFloatS(){
+  const el=$("#floatS"); if(!el) return;
+  placeFloatS();
+  wireDrag(el, floatSwapPress, (x,y)=>{ ST.fsX=x; ST.fsY=y; });
+}
 function clampFloat(x, y){
   const el=$("#floatP"); const s=(el&&el.offsetWidth)||56;
   const w=window.innerWidth, h=window.innerHeight;
@@ -9523,13 +9623,16 @@ const FS_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
    the clipboard is not what you want, leaving is. */
 function paintFloat(){
   const el=$("#floatP"); if(!el) return;
-  const full = document.body.classList.contains("fullread");
-  el.innerHTML = full ? FS_GLYPH : "P";
-  el.title = full ? "Leave full screen and pause"
-                  : "Paste, read, and go full screen. Drag to move.";
+  /* P STAYS P. It used to become the exit glyph inside full screen, which
+     made two buttons that both left full screen and no way to paste a second
+     article without leaving first. Leaving is the dot's one job; pasting is
+     P's one job; neither borrows the other's. */
+  el.innerHTML = "P";
+  el.title = "Paste and read. Drag to move.";
 }
 function floatPress(){
-  if(document.body.classList.contains("fullread")){ leaveFull(); return; }
+  /* No early return for full screen any more: pasting a fresh article while
+     already in full screen is the whole point of reading this way. */
   /* The app always opens normal. Full screen is a consequence of PASTING, not
      of launching, and only when asked for: reading a fresh article is the
      moment the furniture stops helping, and it is a moment he chose.
@@ -9537,7 +9640,7 @@ function floatPress(){
      When it is wanted, ask HERE, inside the gesture, before anything async.
      Requested after the clipboard resolves it would be refused, because the
      user activation is spent by then. */
-  if(ST.fullOnPaste){
+  if(ST.fullOnPaste && !document.body.classList.contains("fullread")){
     reqFull();
     setFullread(true);
   }
@@ -9578,7 +9681,7 @@ function wireFloat(){
   };
   el.addEventListener("pointerup", done);
   el.addEventListener("pointercancel", done);
-  window.addEventListener("resize", ()=>{ placeFloat(); placeFloatF(); });
+  window.addEventListener("resize", ()=>{ placeFloat(); placeFloatF(); placeFloatS(); });
   placeFloat();
 }
 
@@ -10101,6 +10204,9 @@ function boot(){
     ST.floatFull = (st.floatFull !== false);
     if(typeof st.ffX === "number") ST.ffX = st.ffX;
     if(typeof st.ffY === "number") ST.ffY = st.ffY;
+    ST.floatSwap = !!st.floatSwap;
+    if(typeof st.fsX === "number") ST.fsX = st.fsX;
+    if(typeof st.fsY === "number") ST.fsY = st.fsY;
     if(typeof st.fpX === "number") ST.fpX = st.fpX;
     if(typeof st.fpY === "number") ST.fpY = st.fpY;
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
@@ -10159,7 +10265,7 @@ function boot(){
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
     renderEdgeGrid(); renderSpKeyList(); renderSpDead(); loadCroVoices();
     renderGroq(); wireGroq(); renderKeyList(); wireKeys();
-    mediaSetup(); wireFloat(); wireFloatF(); wireFsWatch(); wirePersistFlush();
+    mediaSetup(); wireFloat(); wireFloatF(); wireFloatS(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyLag(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();
