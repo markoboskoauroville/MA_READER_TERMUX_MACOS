@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.31
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.32
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.31%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.32%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -717,7 +717,7 @@ printf '\n   %s%s%s\n\n' "$DIM" "$MODE" "$OFF"
 # NOT speechify_voices.json: that is a cache of the voice catalogue, it costs
 # a single request to rebuild, and carrying a stale one across an update is
 # how the picker got stuck showing four voices out of nine hundred.
-KEEP="speechify_api.txt speechify_failed.json speechify_usage.json groq_api.txt groq_failed.json groq_model.json web_state.json web_state.json.bak browser.txt"
+KEEP="adb_port.txt speechify_api.txt speechify_failed.json speechify_usage.json groq_api.txt groq_failed.json groq_model.json web_state.json web_state.json.bak browser.txt"
 
 # --------------------------------------------------- is it running already? --
 # A live server holds the old code in memory and keeps serving it after every
@@ -3476,9 +3476,9 @@ def ensure_unit(tid, vkey, idx):
 _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.0,
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
-                  "spSet": 0, "bgResume": False, "bothEngines": False,
+                  "spSet": 0, "bothEngines": False,
                   "floatPaste": True, "floatFull": True, "ffX": 0.82, "ffY": 0.58,
-                  "floatSwap": False, "fsX": 0.82, "fsY": 0.44, "voiceBar": True,
+                  "floatSwap": True, "fsX": 0.82, "fsY": 0.44, "adbMode": True, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
                   "croVoice": "lesya", "engVoice": "beatrice_32", "lang": "eng", "langAuto": "eng", "wtime": True,
                   "mode": "read",
@@ -3550,7 +3550,17 @@ def load_state():
     # all and there is no way to drag back something you cannot see.
     st["floatFull"] = bool(st.get("floatFull", True))
     st["floatPaste"] = bool(st.get("floatPaste", True))
-    st["floatSwap"] = bool(st.get("floatSwap", False))
+    st["floatSwap"] = bool(st.get("floatSwap", True))
+    st["adbMode"] = bool(st.get("adbMode", True))
+    # Keys from features that no longer exist are dropped rather than carried
+    # forever. A settings file that still names a switch nobody can see is a
+    # small lie, and the next person to read it will wonder what it does.
+    # ONLY keys that are dead on BOTH sides. A key the client still writes
+    # would be dropped here and written again on the next save, which is a
+    # loop that does nothing and looks like a bug to whoever finds it. So
+    # spPicked, wgap and aimeta stay: the client still persists all three.
+    for _dead in ("bgResume", "swipeRev", "tapPaste"):
+        st.pop(_dead, None)
     for _k, _d in (("ffX", 0.82), ("ffY", 0.58), ("fpX", 0.82), ("fpY", 0.72),
                    ("fsX", 0.82), ("fsY", 0.44)):
         try:
@@ -4050,11 +4060,15 @@ def _sp_payload(accent, refresh=False):
 # whichever answers. `cmd media_session dispatch` is preferred over a key
 # press everywhere it exists, because it speaks to the media session itself
 # instead of throwing a key at whatever happens to be listening.
-MK_DISPATCH = {"play": "play", "pause": "pause", "toggle": "play-pause",
+# The media keys are gone. Asking Android to restart another player was a
+# whole feature built on a privileged shell, and Baba does not want it: the
+# half that mattered was always free, since this app taking the audio focus
+# stops the other player by itself. What remains of that work is the shell
+# runner below, which the app switcher uses.
+_MK_GONE_DISPATCH = {"play": "play", "pause": "pause", "toggle": "play-pause",
                "next": "next", "previous": "previous", "stop": "stop"}
-MK_KEYCODE = {"play": "126", "pause": "127", "toggle": "85",
+_MK_GONE_KEYCODE = {"play": "126", "pause": "127", "toggle": "85",
               "next": "87", "previous": "88", "stop": "86"}
-_mk_route = None                 # the one that worked, remembered for the session
 
 
 def _mk_ok(p):
@@ -4070,20 +4084,6 @@ def _mk_ok(p):
     return True
 
 
-def _mk_routes(action):
-    d = MK_DISPATCH.get(action, "play")
-    k = MK_KEYCODE.get(action, "126")
-    return [
-        ("shizuku",  ["rish", "-c", "cmd media_session dispatch %s" % d]),
-        ("adb",      ["adb", "shell", "cmd", "media_session", "dispatch", d]),
-        ("adb-old",  ["adb", "shell", "media", "dispatch", d]),
-        ("shell",    ["cmd", "media_session", "dispatch", d]),
-        ("shizuku-key", ["rish", "-c", "input keyevent %s" % k]),
-        ("adb-key",  ["adb", "shell", "input", "keyevent", k]),
-        ("input",    ["input", "keyevent", k]),
-    ]
-
-
 def _mk_try(name, argv):
     try:
         p = subprocess.run(argv, capture_output=True, timeout=8)
@@ -4094,6 +4094,42 @@ def _mk_try(name, argv):
         return False, "timed out"
     except Exception as e:
         return False, str(e)[:40]
+
+
+APPSWITCH_KEY = "187"          # KEYCODE_APP_SWITCH, the recents square
+
+
+def sw_deps():
+    """What this phone can offer, WITHOUT sending anything.
+
+    Asked before the first switch rather than after it fails, so a refusal
+    names its cause instead of being a button that quietly does nothing."""
+    have = {"rish": bool(shutil.which("rish")),
+            "adb": bool(shutil.which("adb")),
+            "input": bool(shutil.which("input"))}
+    ready = have["rish"] or have["adb"] or have["input"]
+    how = ("Shizuku" if have["rish"] else
+           "ADB" if have["adb"] else
+           "the plain shell, which usually needs root" if have["input"] else "")
+    return {"ready": ready, "have": have, "how": how,
+            "missing": [k for k in ("rish", "adb") if not have[k]],
+            "hint": ("" if ready else
+                     "No adb and no rish. Turn on Wireless debugging, or run "
+                     "maread-adb once to pair this phone.")}
+
+
+def _sw_routes():
+    """Two taps of the recents key, sent close together.
+
+    Android has no "previous app" keycode. What it has is the recents square,
+    and tapping it TWICE lands on the app you were in before, which is what
+    the thumb gesture does. The pause matters: too fast and the system reads
+    one press, too slow and it leaves you looking at the recents screen."""
+    k = APPSWITCH_KEY
+    twice = "input keyevent %s; sleep 0.12; input keyevent %s" % (k, k)
+    return [("shizuku", ["rish", "-c", twice]),
+            ("adb",     ["adb", "shell", twice]),
+            ("shell",   ["sh", "-c", twice])]
 
 
 BROWSER_FILE = os.path.join(WEB_DIR, "browser.txt")
@@ -4372,98 +4408,6 @@ def api_browser():
     return jsonify({"mode": browser_pref()})
 
 
-@app.route("/api/mediakey", methods=["POST"])
-def api_mediakey():
-    """Send one media command to whatever else is playing.
-
-    Half of this was always free: the moment this app speaks, Android hands it
-    the audio focus and the other player stops, no fade. This route is the
-    other half, starting it again, which needs a privileged shell."""
-    global _mk_route
-    data = request.get_json(force=True, silent=True) or {}
-    action = str(data.get("key", "play"))
-    if action not in MK_DISPATCH:
-        action = "play"
-    routes = _mk_routes(action)
-
-    # the remembered winner first, so the steady state is one process, not seven
-    if _mk_route:
-        for name, argv in routes:
-            if name == _mk_route:
-                ok, _ = _mk_try(name, argv)
-                if ok:
-                    return jsonify({"ok": True, "route": name})
-                _mk_route = None           # it stopped working, walk again
-                break
-
-    tried = []
-    for name, argv in routes:
-        ok, why = _mk_try(name, argv)
-        tried.append("%s: %s" % (name, "ok" if ok else (why or "refused")))
-        if ok:
-            _mk_route = name
-            return jsonify({"ok": True, "route": name, "tried": tried})
-    return jsonify({"ok": False, "tried": tried,
-                    "error": "No privileged route. Run maread-adb in Termux to "
-                             "set one up, then try again."})
-
-
-APPSWITCH_KEY = "187"          # KEYCODE_APP_SWITCH, the recents square
-
-
-def _sw_routes():
-    """The same ladder the media keys walk, sending the recents key twice.
-
-    Android has no "go to the previous app" keycode. What it has is the
-    recents square, and tapping it TWICE lands on the app you were in before,
-    which is what the thumb gesture does too. So the switch is two taps sent
-    close together, and the pause between them matters: too fast and the
-    system treats it as one press, too slow and it just leaves you looking at
-    the recents screen."""
-    k = APPSWITCH_KEY
-    twice_sh = "input keyevent %s; sleep 0.12; input keyevent %s" % (k, k)
-    return [
-        ("shizuku", ["rish", "-c", twice_sh]),
-        ("adb",     ["adb", "shell", twice_sh]),
-        ("shell",   ["sh", "-c", twice_sh]),
-    ]
-
-
-@app.route("/api/appswitch", methods=["POST"])
-def api_appswitch():
-    """Back to the app you were in before this one.
-
-    A web page cannot switch Android apps: there is no API for it and there
-    should not be. This goes through the privileged shell that maread-adb sets
-    up, the same one the media keys use, so it works exactly where they work
-    and says so plainly where they do not."""
-    global _mk_route
-    tried = []
-    for name, argv in _sw_routes():
-        ok, why = _mk_try(name, argv)
-        tried.append("%s: %s" % (name, "ok" if ok else (why or "refused")))
-        if ok:
-            return jsonify({"ok": True, "route": name, "tried": tried})
-    return jsonify({"ok": False, "tried": tried,
-                    "error": "No privileged shell. Run maread-adb in Termux to "
-                             "set one up, then try again."})
-
-
-@app.route("/api/mediastatus")
-def api_mediastatus():
-    """What is available on this phone, without sending anything."""
-    out = {"route": _mk_route, "have": {}}
-    for exe in ("rish", "adb"):
-        out["have"][exe] = bool(shutil.which(exe))
-    if out["have"].get("adb"):
-        try:
-            p = subprocess.run(["adb", "devices"], capture_output=True, timeout=8)
-            body = (p.stdout or b"").decode("utf-8", "replace")
-            out["adbDevices"] = [l.split()[0] for l in body.splitlines()[1:]
-                                 if l.strip() and "device" in l]
-        except Exception:
-            out["adbDevices"] = []
-    return jsonify(out)
 
 
 @app.route("/api/speechify/status")
@@ -4585,6 +4529,33 @@ def api_langs():
                     "uses": lg.get("uses", ""),
                     "voices": by_key_voices.get(lg["key"], [])})
     return jsonify({"langs": out, "default": list(DEFAULT_LANGS)})
+
+@app.route("/api/appswitch/status")
+def api_appswitch_status():
+    return jsonify(sw_deps())
+
+
+@app.route("/api/appswitch", methods=["POST"])
+def api_appswitch():
+    """Back to the app you were in before this one.
+
+    A web page cannot switch Android apps: there is no API for it and there
+    should not be. This goes through the privileged shell, and it CHECKS
+    FIRST, so a refusal names its cause."""
+    d = sw_deps()
+    if not d["ready"]:
+        return jsonify({"ok": False, "error": d["hint"],
+                        "missing": d["missing"], "tried": []})
+    tried = []
+    for name, argv in _sw_routes():
+        ok, why = _mk_try(name, argv)
+        tried.append("%s: %s" % (name, "ok" if ok else (why or "refused")))
+        if ok:
+            return jsonify({"ok": True, "route": name, "tried": tried})
+    return jsonify({"ok": False, "tried": tried,
+                    "error": "The shell is there but refused. Run maread-adb "
+                             "in Termux to check the connection."})
+
 
 @app.route("/api/state", methods=["GET", "POST"])
 def api_state():
@@ -5892,6 +5863,10 @@ body.sheetopen .floatf{display:none !important}
 body.hasfloats .floats{display:flex}
 .floats:active{border-color:var(--tune); opacity:1}
 .floats.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
+/* dimmed until the phone can actually do it, so it never looks ready and
+   then does nothing */
+.floats.notready{opacity:.4}
+.floats.notready .sarr{opacity:.6}
 body.fullread .floats{opacity:.72; background:rgba(127,127,127,.16);
   border-color:transparent}
 body.fullread .floats:active{opacity:1}
@@ -6088,7 +6063,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.31 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.32 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6338,11 +6313,11 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="floatTog">Floating paste button</button>
       <button class="chip" id="floatFTog">Floating full screen button</button>
       <button class="chip" id="floatSTog">Floating app switcher</button>
-      <button class="chip" id="bgResumeTog">Resume my music</button>
-      <button class="chip" id="bgTestBtn">Test it</button>
+      <button class="chip" id="adbTog">ADB mode on start</button>
+      <button class="chip" id="swTest">Test the switcher</button>
     </div>
     <div class="langhint"><b>Floating paste button.</b> Drag it anywhere. Press: paste, full screen, read. In full screen it is the way out.</div>
-    <div class="langhint"><b>Resume my music.</b> Asks your player to start again when you pause. Needs maread-adb.</div>
+
   </div>
 
   <div class="group g-colour" data-eng="app">
@@ -6574,7 +6549,7 @@ const ST = {
   spSet: 0, spPerSet: 4, bothEngines: false,
   floatPaste: true, fpX: 0.82, fpY: 0.72,
   floatFull: true, ffX: 0.82, ffY: 0.58,
-  floatSwap: false, fsX: 0.82, fsY: 0.44, browser: "chrome",
+  floatSwap: true, fsX: 0.82, fsY: 0.44, adbMode: true, browser: "chrome",
   /* null means never chosen, so the first four can be offered. An empty
      ARRAY means chosen to be none, and must be left alone. Treating those
      two as the same value is what made unticked voices come back on every
@@ -8327,7 +8302,7 @@ function setPlayIcon(on){ $("#playBtn").innerHTML = on ? ICON_PAUSE : ICON_PLAY;
    something stale. And when playing stops, the background music can be handed
    back. See the note on /api/mediakey for why stopping the music is free and
    starting it again is not. */
-let _bgWas = null, _bgDead = false;
+let _bgWas = null;
 
 function audioState(on){
   on = !!on;
@@ -8340,25 +8315,6 @@ function audioState(on){
   const first = (_bgWas === null);
   _bgWas = on;
   /* only on the falling edge, and never on the very first paint */
-  if(!on && !first && ST.bgResume && !_bgDead) mediaKey("play");
-}
-
-function mediaKey(k, quiet){
-  return api("/api/mediakey", {method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({key: k || "play"})})
-    .then(r=>r.json()).then(d=>{
-      if(!d.ok){
-        /* Ask once. If Android refuses, it will refuse every time, and a
-           toast on every pause would be its own kind of torture. */
-        _bgDead = true;
-        if(ST.bgResume){ ST.bgResume = false; refreshToggles(); persist(); }
-        if(!quiet) toast("Android refused the media key. Turned off.");
-      } else if(!quiet){
-        toast("Sent.");
-      }
-      return d;
-    }).catch(()=>({ok:false, error:"could not reach the server"}));
 }
 
 function mediaSetup(){
@@ -8531,13 +8487,14 @@ function refreshToggles(){
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
   { const b=$("#floatFTog"); if(b) b.classList.toggle("on", !!ST.floatFull); }
   { const b=$("#floatSTog"); if(b) b.classList.toggle("on", !!ST.floatSwap); }
+  { const b=$("#adbTog"); if(b) b.classList.toggle("on", !!ST.adbMode); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
   { const b=$("#voiceBarTog"); if(b) b.classList.toggle("on", !!ST.voiceBar); }
   document.body.classList.toggle("nobar", !ST.voiceBar);
   document.body.classList.toggle("hasfloat", !!ST.floatPaste);
   document.body.classList.toggle("hasfloatf", !!ST.floatFull);
   document.body.classList.toggle("hasfloats", !!ST.floatSwap);
-  { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
+
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
   $("#focusTog").classList.toggle("on", ST.focus);
@@ -8824,7 +8781,7 @@ function stateBody(){
         wordoffsets:ST.wordoffsets, aimeta:ST.aimeta,
         resume:ST.resume,
         engine:ST.engine, spAccent:ST.spAccent, spVkey:ST.spVkey||"",
-        spSet:ST.spSet||0, bgResume:!!ST.bgResume,
+        spSet:ST.spSet||0,
         bothEngines:!!ST.bothEngines,
         spPicked:(Array.isArray(ST.spPicked) ? ST.spPicked : null),
         croVoice:ST.croVoice||"lesya", engVoice:ST.engVoice||"beatrice_32",
@@ -8836,6 +8793,7 @@ function stateBody(){
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         floatFull:!!ST.floatFull, ffX:ST.ffX, ffY:ST.ffY,
         floatSwap:!!ST.floatSwap, fsX:ST.fsX, fsY:ST.fsY,
+        adbMode:!!ST.adbMode,
         enabledLangs:ST.enabledLangs});
 }
 
@@ -9051,11 +9009,31 @@ function bind(){
         }).catch(()=> toast("Could not save that."));
     };
   }
+  { const b=$("#adbTog");
+    if(b) b.onclick = ()=>{
+      ST.adbMode = !ST.adbMode;
+      refreshToggles(); persistNow();
+      /* persistNow, not persist: this is read by the LAUNCHER on the next
+         run, out of the settings file, so it has to be on disk before the
+         app is closed rather than a quarter second later. */
+      toast(ST.adbMode ? "ADB comes up on the next start"
+                       : "ADB will be left alone on the next start");
+    };
+  }
+  { const b=$("#swTest");
+    if(b) b.onclick = ()=>{
+      api("/api/appswitch/status").then(r=>r.json()).then(d=>{
+        toast(d.ready ? ("Ready, via " + d.how)
+                      : (d.hint || "Not available on this phone."));
+        const el=$("#floatS"); if(el) el.classList.toggle("notready", !d.ready);
+      }).catch(()=> toast("Could not reach the server."));
+    };
+  }
   { const b=$("#floatSTog");
     if(b) b.onclick = ()=>{
       ST.floatSwap = !ST.floatSwap;
       refreshToggles(); persist();
-      if(ST.floatSwap){ placeFloatS(); toast("Needs maread-adb in Termux"); }
+      if(ST.floatSwap){ placeFloatS(); wireFloatS(); toast("App switcher shown"); }
       else toast("App switcher hidden");
     };
   }
@@ -9102,23 +9080,6 @@ function bind(){
       refreshToggles(); persist();
       toast(ST.fullOnPaste ? "A paste goes full screen"
                            : "A paste stays in the normal view");
-    };
-  }
-  { const b=$("#bgResumeTog");
-    if(b) b.onclick = ()=>{
-      ST.bgResume = !ST.bgResume;
-      if(ST.bgResume) _bgDead = false;      /* a fresh chance after a refusal */
-      refreshToggles(); persist();
-      toast(ST.bgResume ? "Your music will be asked to resume" : "Left alone");
-    };
-  }
-  { const b=$("#bgTestBtn");
-    if(b) b.onclick = ()=>{
-      toast("Asking Android\u2026");
-      mediaKey("play", true).then(d=>{
-        if(d.ok) toast("Working, via " + (d.route || "a shell") + ".");
-        else toast("No route yet. Run maread-adb in Termux.");
-      });
     };
   }
   $("#autoplayTog").onclick = ()=>{ ST.autoplay=!ST.autoplay; refreshToggles(); persist(); };
@@ -9600,6 +9561,13 @@ function wireFloatS(){
   const el=$("#floatS"); if(!el) return;
   placeFloatS();
   wireDrag(el, floatSwapPress, (x,y)=>{ ST.fsX=x; ST.fsY=y; });
+  /* Ask ONCE at boot what this phone can do, so the button can say it is not
+     ready before it is pressed rather than after. */
+  api("/api/appswitch/status").then(r=>r.json()).then(d=>{
+    el.classList.toggle("notready", !d.ready);
+    el.title = d.ready ? ("Switch to the last app, via " + d.how + ". Drag to move.")
+                       : (d.hint || "Not available on this phone.");
+  }).catch(()=>{});
 }
 function clampFloat(x, y){
   const el=$("#floatP"); const s=(el&&el.offsetWidth)||56;
@@ -10185,7 +10153,7 @@ function boot(){
     ST.spAccent = (st.spAccent === "us") ? "us" : "uk";
     ST.spVkey  = st.spVkey || "";
     ST.spSet   = Math.max(0, st.spSet | 0);
-    ST.bgResume = !!st.bgResume;
+
     ST.bothEngines = !!st.bothEngines;
     ST.spPicked = Array.isArray(st.spPicked) ? st.spPicked.slice() : null;
     ST.croVoice = st.croVoice || "lesya";
@@ -10204,7 +10172,8 @@ function boot(){
     ST.floatFull = (st.floatFull !== false);
     if(typeof st.ffX === "number") ST.ffX = st.ffX;
     if(typeof st.ffY === "number") ST.ffY = st.ffY;
-    ST.floatSwap = !!st.floatSwap;
+    ST.floatSwap = (st.floatSwap !== false);
+    ST.adbMode = (st.adbMode !== false);
     if(typeof st.fsX === "number") ST.fsX = st.fsX;
     if(typeof st.fsY === "number") ST.fsY = st.fsY;
     if(typeof st.fpX === "number") ST.fpX = st.fpX;
@@ -10487,6 +10456,66 @@ show_head(){   # $1 = the port actually in use
 # The server takes the first free port at or above the base one and writes the
 # winner to a portfile, so wait for that rather than guessing; otherwise a
 # second copy of the app would open the browser on the first copy's page.
+# ---------------------------------------------------- the shell, if wanted --
+# One command. mareadweb brings the privileged shell up by itself, so there is
+# nothing else to remember and nothing else to type.
+#
+# It is read from the SETTINGS FILE, which is the same file the sheet writes,
+# so the switch in Settings decides what the NEXT run does. A launcher cannot
+# ask the running app, and should not: the app may not be running yet.
+#
+# Nothing here ever blocks or prompts. If Shizuku is there it already works
+# and there is nothing to do. If adb is there it is nudged into connecting,
+# quietly, with one line of report either way. Any failure is reported and
+# the app starts anyway, because reading is the point and switching apps is a
+# convenience on top of it.
+adb_wanted() {
+  python - "$APPDIR/web_state.json" <<'PYADB' 2>/dev/null || echo 1
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        print(0 if json.load(f).get("adbMode", True) else 1)
+except Exception:
+    print(0)          # no settings yet: on, which is the shipped default
+PYADB
+}
+
+adb_bring_up() {
+  [ "$(adb_wanted)" = "0" ] || { printf '   %sADB mode off%s\n' "$DIMC" "$OFFC"; return 0; }
+  if command -v rish >/dev/null 2>&1; then
+    printf '   %sShizuku is here, the switcher will work%s\n' "$DIMC" "$OFFC"
+    return 0
+  fi
+  command -v adb >/dev/null 2>&1 || {
+    printf '   %sno adb and no rish: the app switcher will be dim%s\n' "$DIMC" "$OFFC"
+    return 0
+  }
+  # already connected? then say so and stop.
+  if adb shell true >/dev/null 2>&1; then
+    printf '   %sADB is connected%s\n' "$GRNC" "$OFFC"
+    return 0
+  fi
+  # a port remembered from a previous run costs nothing to try first
+  ADBPORT=""
+  [ -s "$APPDIR/adb_port.txt" ] && ADBPORT="$(cat "$APPDIR/adb_port.txt" 2>/dev/null)"
+  if [ -z "$ADBPORT" ]; then
+    ADBPORT="$(adb mdns services 2>/dev/null | grep _adb-tls-connect \
+               | head -1 | sed -E 's/.*:([0-9]+).*/\1/')"
+  fi
+  if [ -n "$ADBPORT" ]; then
+    adb connect "127.0.0.1:$ADBPORT" >/dev/null 2>&1 || true
+    if adb shell true >/dev/null 2>&1; then
+      echo "$ADBPORT" > "$APPDIR/adb_port.txt" 2>/dev/null || true
+      printf '   %sADB connected on %s%s\n' "$GRNC" "$ADBPORT" "$OFFC"
+      return 0
+    fi
+  fi
+  printf '   %sADB not connected. Turn on Wireless debugging, or%s\n' "$DIMC" "$OFFC"
+  printf '   %srun maread-adb once to pair this phone.%s\n' "$DIMC" "$OFFC"
+}
+
+adb_bring_up
+
 rm -f "$PORTFILE"
 (
   n=0

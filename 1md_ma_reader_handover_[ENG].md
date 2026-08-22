@@ -675,6 +675,36 @@ scroll, and someone listening should not have to be careful where he touches.
 Tapping the sentence already playing now restarts it; the player bar pauses.
 Gone from the client, the page, the Help text, the chips and the server state.
 
+## One command
+
+mareadweb brings the privileged shell up by itself. There is nothing else to
+type and nothing else to remember. maread-adb still exists for the one-off
+pairing a phone needs before ADB will connect at all, but it is not part of
+starting the app.
+
+The launcher reads adbMode out of web_state.json, the same file the sheet
+writes, so the switch in Settings decides what the NEXT run does. A launcher
+cannot ask the running app and should not: the app may not be running yet.
+
+Nothing there blocks or prompts. Shizuku present means there is nothing to do.
+adb present means one quiet connect attempt, using a port remembered from last
+time before asking mDNS. Anything else is one line of report and the app
+starts regardless, because reading is the point and switching apps is a
+convenience on top of it.
+
+## The media keys are gone
+
+Asking Android to restart another player was a whole feature built on a
+privileged shell, and the half that mattered was always free: this app taking
+the audio focus stops the other player by itself. Removed entirely, along with
+its two routes, its settings chip and its client code. What survives of that
+work is the shell runner, which the app switcher uses.
+
+Settings written by the old version are pruned of bgResume, swipeRev and
+tapPaste on load. ONLY keys dead on BOTH sides are pruned: a key the client
+still writes would be dropped and written again on every save, a loop that
+does nothing and reads as a bug.
+
 ## Three floaters
 
     P        paste and read. ALWAYS the letter P.
