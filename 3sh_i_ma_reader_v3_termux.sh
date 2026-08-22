@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.32
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.33
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.32%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.33%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -620,10 +620,35 @@ dep_table() {
 }
 
 # one keypress, no Enter, exactly like every other tool here
+# ---------------------------------------------------- the echo guarantee ----
+# READING ONE KEY MEANS TURNING ECHO OFF. If the script then dies between
+# turning it off and turning it back on, the terminal is left deaf: the person
+# types and nothing appears. Ctrl+C during a menu does exactly that, and so
+# does closing the app, and the damage outlives the script.
+#
+# So the terminal's state is saved ONCE, before anything touches it, and a
+# trap puts it back on EVERY way out: normal exit, Ctrl+C, TERM, HUP. The trap
+# is armed BEFORE the first stty, because a trap armed afterwards is a trap
+# with a hole in it exactly where the bug lives.
+TTY_SAVED=""
+[ -t 0 ] && TTY_SAVED="$(stty -g 2>/dev/null || true)"
+tty_restore() {
+  [ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" 2>/dev/null || true
+  # a second belt: sane puts echo back even if the saved string is unusable
+  [ -t 0 ] && stty echo 2>/dev/null || true
+}
+trap 'tty_restore' EXIT
+trap 'tty_restore; exit 130' INT
+trap 'tty_restore; exit 143' TERM
+trap 'tty_restore; exit 129' HUP
+
 getkey() {
   if [ -t 0 ]; then
     old="$(stty -g 2>/dev/null)"
-    stty raw -echo 2>/dev/null
+    # -icanon -echo, NOT raw. Full raw mode also turns OFF signals, so Ctrl+C
+    # stops being a signal and becomes a plain byte: the trap never fires and
+    # the terminal is left deaf. This reads one key AND leaves Ctrl+C working.
+    stty -icanon -echo min 1 time 0 2>/dev/null
     k="$(dd bs=1 count=1 2>/dev/null)"
     stty "$old" 2>/dev/null
     printf '%s' "$k"
@@ -6063,7 +6088,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.32 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.33 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -10531,8 +10556,20 @@ rm -f "$PORTFILE"
 
 MAREAD_WEB_HOST="$HOST" MAREAD_WEB_PORT="$PORT" python "$APPDIR/server.py" &
 SRV=$!
-cleanup(){ kill "$SRV" 2>/dev/null; termux-wake-unlock 2>/dev/null; }
-trap 'cleanup; exit 0' INT TERM
+# The launcher reads single keys too, so it carries the same guarantee. Its
+# cleanup now puts the terminal back before anything else, because a person
+# whose terminal has gone deaf cannot even see whether the server stopped.
+TTY_SAVED=""
+[ -t 0 ] && TTY_SAVED="$(stty -g 2>/dev/null || true)"
+tty_restore() {
+  [ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" 2>/dev/null || true
+  [ -t 0 ] && stty echo 2>/dev/null || true
+}
+cleanup(){ tty_restore; kill "$SRV" 2>/dev/null; termux-wake-unlock 2>/dev/null; }
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
 
 # ------------------------------------------------------------- hotkeys -----
 # While it runs, one key reopens the page. Useful when the browser was closed,
@@ -10596,9 +10633,34 @@ APPDIR="$HOME/.maread-web"
 
 rule(){ printf '   %s%s%s\n' "$D" "------------------------------------------" "$O"; }
 
+# ---------------------------------------------------- the echo guarantee ----
+# READING ONE KEY MEANS TURNING ECHO OFF. If the script then dies between
+# turning it off and turning it back on, the terminal is left deaf: the person
+# types and nothing appears. Ctrl+C during a menu does exactly that, and so
+# does closing the app, and the damage outlives the script.
+#
+# So the terminal's state is saved ONCE, before anything touches it, and a
+# trap puts it back on EVERY way out: normal exit, Ctrl+C, TERM, HUP. The trap
+# is armed BEFORE the first stty, because a trap armed afterwards is a trap
+# with a hole in it exactly where the bug lives.
+TTY_SAVED=""
+[ -t 0 ] && TTY_SAVED="$(stty -g 2>/dev/null || true)"
+tty_restore() {
+  [ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" 2>/dev/null || true
+  # a second belt: sane puts echo back even if the saved string is unusable
+  [ -t 0 ] && stty echo 2>/dev/null || true
+}
+trap 'tty_restore' EXIT
+trap 'tty_restore; exit 130' INT
+trap 'tty_restore; exit 143' TERM
+trap 'tty_restore; exit 129' HUP
+
 getkey() {
   if [ -t 0 ]; then
-    old="$(stty -g 2>/dev/null)"; stty raw -echo 2>/dev/null
+    old="$(stty -g 2>/dev/null)"
+    # see the note in the installer: -icanon -echo, never full raw, so that
+    # Ctrl+C remains a signal and the trap can put the terminal back
+    stty -icanon -echo min 1 time 0 2>/dev/null
     k="$(dd bs=1 count=1 2>/dev/null)"; stty "$old" 2>/dev/null
     printf '%s' "$k"
   else
@@ -10694,87 +10756,137 @@ put_cmd "$BIN/maread-update"
 # no switches to remember.
 cat > "$BIN/maread-adb.new" << 'ADBEOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# Give MA Reader a way to press play on your music again.
-A='\033[38;5;214m'; G='\033[38;5;114m'; R='\033[38;5;203m'; D='\033[38;5;245m'; O='\033[0m'
-say(){ printf "$1%s$O\n" "$2"; }
+# MA READER, app switching. Everything here READS unless you press a key.
+A=$'\033[38;5;214m'; G=$'\033[38;5;114m'; R=$'\033[38;5;203m'
+D=$'\033[38;5;245m'; K=$'\033[1;38;5;222m'; O=$'\033[0m'
+say(){ printf '%s%s%s\n' "$1" "$2" "$O"; }
+rule(){ printf '   %s%s%s\n' "$D" "------------------------------------------" "$O"; }
 
-test_media(){
-  if command -v rish >/dev/null 2>&1 && \
-     rish -c 'cmd media_session dispatch play' >/dev/null 2>&1; then
-    say "$G" "  Shizuku works. Nothing else to do."; return 0; fi
-  if command -v adb >/dev/null 2>&1 && \
-     adb shell cmd media_session dispatch play >/dev/null 2>&1; then
-    say "$G" "  ADB works. Nothing else to do."; return 0; fi
-  return 1
+# ---------------------------------------------------- the echo guarantee ----
+# READING ONE KEY MEANS TURNING ECHO OFF. If the script dies between turning
+# it off and turning it back on, the terminal is left DEAF: you type and
+# nothing appears, and the damage outlives the script. So the state is saved
+# once, before anything touches it, and a trap puts it back on EVERY way out.
+# The trap is armed BEFORE the first stty, because a trap armed afterwards has
+# a hole in it exactly where the bug lives.
+TTY_SAVED=""
+[ -t 0 ] && TTY_SAVED="$(stty -g 2>/dev/null || true)"
+tty_restore() {
+  [ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" 2>/dev/null || true
+  [ -t 0 ] && stty echo 2>/dev/null || true
 }
+trap 'tty_restore' EXIT
+trap 'tty_restore; exit 130' INT
+trap 'tty_restore; exit 143' TERM
+trap 'tty_restore; exit 129' HUP
 
-do_connect(){
-  command -v adb >/dev/null 2>&1 || { say "$A" "  installing android-tools"; pkg install -y android-tools >/dev/null 2>&1; }
-  say "$A" "  looking for Wireless debugging on this phone"
-  PORT="$(adb mdns services 2>/dev/null | grep _adb-tls-connect | head -1 | sed -E 's/.*:([0-9]+).*/\1/')"
-  if [ -z "$PORT" ]; then
-    echo ""
-    say "$D" "  I could not find it by myself. Open:"
-    say "$D" "    Settings, Developer options, Wireless debugging"
-    say "$D" "  and leave it ON. It shows 'IP address & Port'."
-    printf "  Type just the port number: "; read -r PORT
+getkey() {
+  if [ -t 0 ]; then
+    old="$(stty -g 2>/dev/null)"
+    # -icanon -echo, NEVER full raw. Raw also turns SIGNALS off, so Ctrl+C
+    # stops being a signal and becomes a plain byte, the trap never fires,
+    # and the terminal stays deaf. This reads one key and keeps Ctrl+C alive.
+    stty -icanon -echo min 1 time 0 2>/dev/null
+    k="$(dd bs=1 count=1 2>/dev/null)"
+    stty "$old" 2>/dev/null
+    printf '%s' "$k"
+  else
+    IFS= read -r k || k=""; printf '%s' "$k"
   fi
-  [ -z "$PORT" ] && { say "$R" "  no port, nothing done"; return 1; }
-  say "$A" "  connecting to 127.0.0.1:$PORT"
-  adb connect "127.0.0.1:$PORT" || true
-  sleep 1
-  if test_media; then return 0; fi
-  say "$R" "  connected but the media command was refused."
-  say "$D" "  If this phone has never been paired, choose P below first."
+}
+
+SHIZ="moe.shizuku.privileged.api"
+have(){ command -v "$1" >/dev/null 2>&1; }
+shiz_installed(){ pm path "$SHIZ" >/dev/null 2>&1; }
+rish_says(){ have rish && rish -c 'echo ok' 2>&1 | head -1; }
+rish_works(){ have rish && rish -c 'echo ok' 2>/dev/null | grep -q '^ok$'; }
+
+report() {
+  echo ""
+  say "$K" "  MA READER, app switching"
+  rule
+  W="no"; rish_works && W="YES"
+  printf '    %-24s %s\n' "Shizuku installed" "$(shiz_installed && echo yes || echo no)"
+  printf '    %-24s %s\n' "rish in Termux"    "$(have rish && echo yes || echo no)"
+  printf '    %-24s %s\n' "rish answers"      "$W"
+  if have rish && [ "$W" != "YES" ]; then
+    printf '    %-24s %s\n' "what it says"    "$(rish_says)"
+  fi
+  printf '    %-24s %s\n' "adb in Termux"     "$(have adb && echo yes || echo no)"
+  rule
+  if [ "$W" = "YES" ]; then
+    say "$G" "  Everything works. The arrows button in the reader switches apps."
+  elif shiz_installed && have rish; then
+    say "$A" "  Shizuku is installed and rish is here, but the service is not"
+    say "$D" "  running. Press [O], then Start under Wireless debugging."
+    say "$D" "  Shizuku stops on every reboot. That is Shizuku, not this app."
+  elif shiz_installed; then
+    say "$A" "  Shizuku is installed but rish is missing. Press [E]: it is"
+    say "$D" "  taken out of the Shizuku app itself, nothing is downloaded."
+  else
+    say "$A" "  Shizuku is not installed. On a phone without root it is the"
+    say "$D" "  only road. Install it, start it, then come back."
+  fi
+  echo ""
+}
+
+do_extract() {
+  shiz_installed || { say "$R" "  Shizuku is not installed."; return 1; }
+  have unzip || { say "$R" "  unzip is missing:  pkg install unzip"; return 1; }
+  APK="$(pm path "$SHIZ" 2>/dev/null | head -1 | sed 's/^package://')"
+  [ -n "$APK" ] || { say "$R" "  could not find the Shizuku apk."; return 1; }
+  say "$A" "  taking rish out of the Shizuku app"
+  TMPD="$(mktemp -d)"
+  ( cd "$TMPD" && unzip -o "$APK" 'assets/rish*' >/dev/null 2>&1 ) || true
+  if [ -f "$TMPD/assets/rish" ] && [ -f "$TMPD/assets/rish_shizuku.dex" ]; then
+    cp -f "$TMPD/assets/rish" "$PREFIX/bin/rish"
+    cp -f "$TMPD/assets/rish_shizuku.dex" "$PREFIX/bin/rish_shizuku.dex"
+    chmod +x "$PREFIX/bin/rish"; rm -rf "$TMPD"
+    say "$G" "  rish is in place."; return 0
+  fi
+  rm -rf "$TMPD"
+  say "$R" "  that apk did not contain rish."
   return 1
 }
 
-do_pair(){
-  command -v adb >/dev/null 2>&1 || pkg install -y android-tools >/dev/null 2>&1
-  echo ""
-  say "$D" "  On the phone open:"
-  say "$D" "    Settings, Developer options, Wireless debugging,"
-  say "$D" "    then 'Pair device with pairing code'."
-  say "$D" "  Keep that window open. Use split screen if you can, because"
-  say "$D" "  Android throws the pairing away when the dialog closes."
-  echo ""
-  printf "  Pairing PORT (the one in the pairing window): "; read -r PP
-  printf "  Six digit CODE: "; read -r CODE
-  [ -z "$PP" ] || [ -z "$CODE" ] && { say "$R" "  nothing entered"; return 1; }
-  adb pair "127.0.0.1:$PP" "$CODE" && say "$G" "  paired" || { say "$R" "  pairing failed"; return 1; }
-  do_connect
+do_open() {
+  shiz_installed || { say "$R" "  Shizuku is not installed."; return 1; }
+  am start -n "$SHIZ/moe.shizuku.manager.MainActivity" >/dev/null 2>&1 \
+    || am start "$SHIZ" >/dev/null 2>&1 \
+    || monkey -p "$SHIZ" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+  say "$A" "  Shizuku opened. Press Start under Wireless debugging, come"
+  say "$D" "  back here and press [T]."
 }
 
-do_status(){
-  echo ""
-  command -v rish >/dev/null 2>&1 && say "$G" "  rish  present (Shizuku)" || say "$D" "  rish  not installed"
-  command -v adb  >/dev/null 2>&1 && say "$G" "  adb   present" || say "$D" "  adb   not installed"
-  command -v adb  >/dev/null 2>&1 && { echo ""; adb devices | sed 's/^/    /'; }
-  echo ""
-  if test_media; then :; else say "$R" "  no privileged route right now"; fi
+do_test() {
+  if ! rish_works; then say "$R" "  rish does not answer: $(rish_says)"; return 1; fi
+  say "$G" "  rish answers. Sending the switch..."
+  if rish -c 'input keyevent 187; sleep 0.12; input keyevent 187' >/dev/null 2>&1; then
+    say "$G" "  sent."
+  else
+    say "$R" "  rish answers but the key was refused."
+  fi
 }
 
 while :; do
-  echo ""
-  say "$A" "  MA READER, media control setup"
-  echo ""
-  say "$D" "  Android only lets a shell press play on another app. Two ways in,"
-  say "$D" "  both from Developer options, both needed once per reboot."
-  echo ""
-  echo "    [C] connect and test   (Wireless debugging is ON)"
-  echo "    [P] pair first         (never paired on this phone)"
-  echo "    [S] what do I have"
+  report
+  echo "    [T] test it now"
+  echo "    [O] open Shizuku so I can press Start"
+  echo "    [E] take rish out of the Shizuku app"
   echo "    [Q] quit"
   echo ""
-  printf "  choose: "; read -r K
-  case "$K" in
-    c|C) do_connect ;;
-    p|P) do_pair ;;
-    s|S) do_status ;;
-    q|Q|"") echo ""; break ;;
-    *) say "$R" "  C, P, S or Q" ;;
+  printf '   %s>%s ' "$A" "$O"
+  k="$(getkey)"; echo ""
+  case "$k" in
+    t|T) do_test ;;
+    o|O) do_open ;;
+    e|E) do_extract ;;
+    *)   echo ""; exit 0 ;;
   esac
+  echo ""
+  printf '   %sany key to go on%s ' "$D" "$O"; getkey >/dev/null; echo ""
 done
+
 ADBEOF
 put_cmd "$BIN/maread-adb"
 

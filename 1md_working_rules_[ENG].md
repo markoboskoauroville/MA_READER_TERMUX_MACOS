@@ -182,6 +182,66 @@ already existed in his own repository and had for months.
 
 ---
 
+## 2d. Give the terminal its echo back. Always.
+
+A menu that reads ONE KEY has to turn echo off. If the script then dies
+between turning it off and turning it back on, the terminal is left DEAF: the
+person types and nothing appears on screen. They are typing correctly; the
+terminal simply is not showing it. The damage outlives the script, survives
+into every other command they run, and looks like the phone is broken.
+
+This bug has been spreading through every app of Baba's that reads single
+keys. It ends here. Two rules, both mandatory, both cheap.
+
+FIRST: SAVE ONCE, TRAP EVERYTHING, ARM BEFORE YOU TOUCH.
+
+    TTY_SAVED=""
+    [ -t 0 ] && TTY_SAVED="$(stty -g 2>/dev/null || true)"
+    tty_restore() {
+      [ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" 2>/dev/null || true
+      [ -t 0 ] && stty echo 2>/dev/null || true
+    }
+    trap 'tty_restore' EXIT
+    trap 'tty_restore; exit 130' INT
+    trap 'tty_restore; exit 143' TERM
+    trap 'tty_restore; exit 129' HUP
+
+The trap is armed BEFORE the first stty. A trap armed afterwards has a hole in
+it exactly where the bug lives. The second line of tty_restore is a belt as
+well as braces: if the saved string is unusable, plain "stty echo" still gets
+the person their keyboard back.
+
+SECOND, AND THIS IS THE ONE EVERYBODY MISSES: NEVER USE stty raw.
+
+    WRONG   stty raw -echo
+    RIGHT   stty -icanon -echo min 1 time 0
+
+Full raw mode also turns SIGNALS off. Ctrl+C stops being a signal and becomes
+a plain byte, so the INT trap never fires, and the terminal stays deaf no
+matter how carefully the traps were written. Measured: with "stty raw" a real
+Ctrl+C left echo off in every test; with "-icanon -echo" all seven ways out
+restored it.
+
+THE OTHER CORRECT WAY is bash's own single-key read, which never touches
+stty at all:
+
+    IFS= read -rsn1 -t 1 K
+
+-s does the silencing itself and puts it back when it returns. mareadweb uses
+this; the installer, the updater and maread-adb use stty because they must
+work under sh as well. Either is fine. What is NOT fine is stty raw, or stty
+without a trap.
+
+HOW TO TEST IT, since this cannot be checked by reading: drive the script
+through a pty, write a REAL Ctrl+C byte (0x03) into the master, and then read
+the terminal attributes and check the ECHO bit. Signalling the process
+directly is not the same thing and will pass when the real case fails. Seven
+ways out are worth checking: a normal exit, an unknown command, TERM, INT, a
+real Ctrl+C while a key is being waited for, TERM while waiting, and HUP when
+the app is closed.
+
+---
+
 ## 3. One spoon at a time
 
 Spoon equals step.
