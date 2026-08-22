@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.29
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.30
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.29%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.30%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -3477,7 +3477,7 @@ _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.
                   "wgap": 0.0,
                   "engine": "edge", "spAccent": "uk", "spVkey": "",
                   "spSet": 0, "bgResume": False, "bothEngines": False,
-                  "floatPaste": True, "voiceBar": True,
+                  "floatPaste": True, "floatFull": True, "ffX": 0.82, "ffY": 0.58, "voiceBar": True,
                   "spPicked": None, "fullOnPaste": False, "hideTabs": True, "pane": "app",
                   "croVoice": "lesya", "engVoice": "beatrice_32", "lang": "eng", "langAuto": "eng", "wtime": True,
                   "mode": "read",
@@ -3543,6 +3543,20 @@ def load_state():
     # client copes with either, but a stored value nobody recognises is a
     # small lie that outlives the release that made it.
     st["wtime"] = bool(st.get("wtime", True))
+    # Both floaters: the switch is a yes or no, and the remembered corner is a
+    # FRACTION of the screen. Anything else arriving here would be placed by
+    # the browser as a pixel offset of NaN, which puts the button nowhere at
+    # all and there is no way to drag back something you cannot see.
+    st["floatFull"] = bool(st.get("floatFull", True))
+    st["floatPaste"] = bool(st.get("floatPaste", True))
+    for _k, _d in (("ffX", 0.82), ("ffY", 0.58), ("fpX", 0.82), ("fpY", 0.72)):
+        try:
+            _v = float(st.get(_k, _d))
+        except (TypeError, ValueError):
+            _v = _d
+        if _v != _v:                      # NaN is never equal to itself
+            _v = _d
+        st[_k] = max(0.0, min(1.0, _v))
     if st.get("lang") not in ("eng", "hr", "auto"):
         st["lang"] = "eng"
     if st.get("langAuto") not in ("eng", "hr"):
@@ -5806,6 +5820,25 @@ body.hasfloat .floatp{display:flex}
 .floatp:active{border-color:var(--tune); opacity:1}
 .floatp.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
 
+/* The full-screen floater. Same size, same weight, same drag, so the two read
+   as a pair rather than as two unrelated buttons that happen to be round. */
+.floatf{position:fixed; z-index:80; width:56px; height:56px; border-radius:50%;
+  border:1px solid var(--line); background:var(--panel); padding:0; display:none;
+  align-items:center; justify-content:center; touch-action:none;
+  box-shadow:0 3px 14px rgba(0,0,0,.45); opacity:.88}
+.floatf .fdot{width:14px; height:14px; border-radius:50%; background:#fff;
+  display:block; transition:width .12s, height .12s}
+body.hasfloatf .floatf{display:flex}
+.floatf:active{border-color:var(--tune); opacity:1}
+.floatf.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
+/* in full screen it dims with everything else, and the dot shrinks so the
+   ring reads as "you are inside it" without adding a second glyph */
+body.fullread .floatf{opacity:.72; background:rgba(127,127,127,.16);
+  border-color:transparent}
+body.fullread .floatf:active{opacity:1}
+body.fullread .floatf .fdot{width:8px; height:8px}
+body.sheetopen .floatf{display:none !important}
+
 /* The catcher. Some browsers will not hand a page the clipboard at all, and
    no amount of asking changes that. So when the quick way is refused, this
    opens: a real text field, already focused, that the phone will happily
@@ -5837,7 +5870,7 @@ body.fullread .fsout{display:none !important}
 /* ...unless the floating P has been switched off, in which case the corner
    button is the ONLY way out and must come back. Full screen with no exit is
    a trap, and this app promises he is never stuck in that view. */
-body.fullread:not(.hasfloat) > .fsout{display:flex !important}
+body.fullread:not(.hasfloat):not(.hasfloatf) > .fsout{display:flex !important}
 /* while the text is a paste target, say so with the cursor and kill the
    text selection that a tap would otherwise start */
 /* ---------- FULL SCREEN MEANS FULL SCREEN ----------
@@ -5856,6 +5889,7 @@ body.fullread:not(.hasfloat) > .fsout{display:flex !important}
 body.fullread > *{display:none !important}
 body.fullread > main{display:block !important}
 body.fullread > .floatp{display:flex !important}
+body.fullread > .floatf{display:flex !important}
 body.fullread > .toast{display:block !important}
 body.fullread > .catchwrap.on{display:flex !important}
 
@@ -5995,7 +6029,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.29 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.30 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6243,6 +6277,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
       <button class="chip" id="floatTog">Floating paste button</button>
+      <button class="chip" id="floatFTog">Floating full screen button</button>
       <button class="chip" id="bgResumeTog">Resume my music</button>
       <button class="chip" id="bgTestBtn">Test it</button>
     </div>
@@ -6332,6 +6367,12 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 </div>
 
 <button class="floatp" id="floatP" title="Paste and read. Drag to move.">P</button>
+<!-- The second floater. One job and one job only: full screen on, full screen
+     off. A ring with a dot, because it is a state rather than an action and a
+     glyph that changes would be a third thing to learn. -->
+<button class="floatf" id="floatF" title="Full screen on and off. Drag to move.">
+  <span class="fdot"></span>
+</button>
 
 <div class="catchwrap" id="catchWrap">
   <div class="catchbox">
@@ -6464,7 +6505,8 @@ const ST = {
      Speechify is keyed, English only, and brings its own word timings. */
   engine: "edge", spAccent: "uk", spVkey: "", spVoices: [], spInfo: {},
   spSet: 0, spPerSet: 4, bothEngines: false,
-  floatPaste: true, fpX: 0.82, fpY: 0.72, browser: "chrome",
+  floatPaste: true, fpX: 0.82, fpY: 0.72,
+  floatFull: true, ffX: 0.82, ffY: 0.58, browser: "chrome",
   /* null means never chosen, so the first four can be offered. An empty
      ARRAY means chosen to be none, and must be left alone. Treating those
      two as the same value is what made unticked voices come back on every
@@ -8419,10 +8461,12 @@ function refreshToggles(){
   { const b=$("#hideTabsTog"); if(b) b.classList.toggle("on", !!ST.hideTabs); }
   document.body.classList.toggle("notabs", !!ST.hideTabs);
   { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
+  { const b=$("#floatFTog"); if(b) b.classList.toggle("on", !!ST.floatFull); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
   { const b=$("#voiceBarTog"); if(b) b.classList.toggle("on", !!ST.voiceBar); }
   document.body.classList.toggle("nobar", !ST.voiceBar);
   document.body.classList.toggle("hasfloat", !!ST.floatPaste);
+  document.body.classList.toggle("hasfloatf", !!ST.floatFull);
   { const b=$("#bgResumeTog"); if(b) b.classList.toggle("on", !!ST.bgResume); }
   $("#autoplayTog").classList.toggle("on", ST.autoplay);
   { const r=$("#resumeTog"); if(r) r.classList.toggle("on", ST.resume); }
@@ -8720,6 +8764,7 @@ function stateBody(){
         hideTabs:!!ST.hideTabs, mode:ST.mode||"read", pane:ST.pane||"app",
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
+        floatFull:!!ST.floatFull, ffX:ST.ffX, ffY:ST.ffY,
         enabledLangs:ST.enabledLangs});
 }
 
@@ -8933,6 +8978,15 @@ function bind(){
           toast(ST.browser === "chrome" ? "Chrome from now on"
                                         : "Whatever the phone prefers");
         }).catch(()=> toast("Could not save that."));
+    };
+  }
+  { const b=$("#floatFTog");
+    if(b) b.onclick = ()=>{
+      ST.floatFull = !ST.floatFull;
+      refreshToggles(); persist();
+      if(ST.floatFull) placeFloatF();
+      toast(ST.floatFull ? "Drag the dot anywhere you like"
+                         : "Full screen button hidden");
     };
   }
   { const b=$("#floatTog");
@@ -9386,6 +9440,67 @@ function pasteFromClipboard(){
 }
 
 /* ---------- the floating P ---------- */
+/* Both floaters share the drag, the clamp and the remembering. The only
+   things that differ are which element, which two numbers it stores, and what
+   a press does, so those are the only things passed in. */
+function clampFloatEl(el, x, y){
+  const s=(el&&el.offsetWidth)||56;
+  const w=window.innerWidth, h=window.innerHeight;
+  return [Math.max(4, Math.min(w-s-4, x)), Math.max(4, Math.min(h-s-4, y))];
+}
+function wireDrag(el, onPress, save){
+  if(!el) return;
+  let sx=0, sy=0, ox=0, oy=0, moved=false, id=null;
+  el.addEventListener("pointerdown",(e)=>{
+    id=e.pointerId; moved=false; sx=e.clientX; sy=e.clientY;
+    const r=el.getBoundingClientRect(); ox=sx-r.left; oy=sy-r.top;
+    try{ el.setPointerCapture(id); }catch(_){}
+    el.classList.add("moving");
+  });
+  el.addEventListener("pointermove",(e)=>{
+    if(id===null || e.pointerId!==id) return;
+    if(!moved && Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy) < 7) return;
+    moved=true;
+    const [x,y]=clampFloatEl(el, e.clientX-ox, e.clientY-oy);
+    el.style.left=x+"px"; el.style.top=y+"px";
+  });
+  const done=(e)=>{
+    if(id===null) return;
+    try{ el.releasePointerCapture(id); }catch(_){}
+    id=null; el.classList.remove("moving");
+    if(moved){
+      const r=el.getBoundingClientRect();
+      save(r.left/Math.max(1,window.innerWidth),
+           r.top/Math.max(1,window.innerHeight));
+      persist();
+    } else {
+      onPress();
+    }
+  };
+  el.addEventListener("pointerup", done);
+  el.addEventListener("pointercancel", done);
+}
+function placeFloatF(){
+  const el=$("#floatF"); if(!el) return;
+  const fx=(typeof ST.ffX==="number")?ST.ffX:0.82;
+  const fy=(typeof ST.ffY==="number")?ST.ffY:0.58;
+  const [x,y]=clampFloatEl(el, fx*window.innerWidth, fy*window.innerHeight);
+  el.style.left=x+"px"; el.style.top=y+"px";
+}
+/* ITS ONLY JOB. In full screen it leaves and pauses, exactly as the P does,
+   so the two never disagree about what leaving means. Out of full screen it
+   asks for the browser's full screen inside the gesture, which is the only
+   moment the request is allowed. */
+function floatFullPress(){
+  if(document.body.classList.contains("fullread")){ leaveFull(); return; }
+  reqFull();
+  setFullread(true);
+}
+function wireFloatF(){
+  const el=$("#floatF"); if(!el) return;
+  placeFloatF();
+  wireDrag(el, floatFullPress, (x,y)=>{ ST.ffX=x; ST.ffY=y; });
+}
 function clampFloat(x, y){
   const el=$("#floatP"); const s=(el&&el.offsetWidth)||56;
   const w=window.innerWidth, h=window.innerHeight;
@@ -9463,7 +9578,7 @@ function wireFloat(){
   };
   el.addEventListener("pointerup", done);
   el.addEventListener("pointercancel", done);
-  window.addEventListener("resize", placeFloat);
+  window.addEventListener("resize", ()=>{ placeFloat(); placeFloatF(); });
   placeFloat();
 }
 
@@ -9983,6 +10098,9 @@ function boot(){
     ST.mode = (st.mode === "text") ? "text" : "read";
     ST.voiceBar = (st.voiceBar === undefined) ? true : !!st.voiceBar;
     ST.floatPaste = (st.floatPaste === undefined) ? true : !!st.floatPaste;
+    ST.floatFull = (st.floatFull !== false);
+    if(typeof st.ffX === "number") ST.ffX = st.ffX;
+    if(typeof st.ffY === "number") ST.ffY = st.ffY;
     if(typeof st.fpX === "number") ST.fpX = st.fpX;
     if(typeof st.fpY === "number") ST.fpY = st.fpY;
     if(sp){ ST.spInfo = sp; ST.spVoices = sp.voices || [];
@@ -10041,7 +10159,7 @@ function boot(){
     applyEngineCards(); renderSpAccents(); renderSpGrid(); renderSpKeys();
     renderEdgeGrid(); renderSpKeyList(); renderSpDead(); loadCroVoices();
     renderGroq(); wireGroq(); renderKeyList(); wireKeys();
-    mediaSetup(); wireFloat(); wireFsWatch(); wirePersistFlush();
+    mediaSetup(); wireFloat(); wireFloatF(); wireFsWatch(); wirePersistFlush();
     renderVoices(); renderLangList();
     applySpeed(); applyVolume(); applyGap(); applyLag(); applyWgap(); applySize();
     applyFont(); applySpacing(); applyTheme(); applyWordHl(); applyHiColors(); applySync();

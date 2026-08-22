@@ -675,6 +675,28 @@ scroll, and someone listening should not have to be careful where he touches.
 Tapping the sentence already playing now restarts it; the player bar pauses.
 Gone from the client, the page, the Help text, the chips and the server state.
 
+## Two floaters
+
+    P        paste, read, and go full screen if that is asked for
+    (o)      a ring with a white dot: full screen on, full screen off
+
+Both are 56px, both drag, both remember where the thumb put them as a FRACTION
+of the screen so a turn of the phone keeps them, and both survive into full
+screen. They share one wireDrag and one clamp; the only things that differ are
+which element, which two numbers it stores and what a press does.
+
+The dot shrinks inside full screen, so the ring reads as "you are in it"
+without a second glyph to learn. Both hide while Settings is open.
+
+THE PROMISE STILL HOLDS: full screen always has a way out. The corner button
+returns only when NEITHER floater is on screen, which is written as
+:not(.hasfloat):not(.hasfloatf) and proved for all four combinations.
+
+Both switches and both remembered corners are clamped on the server. A corner
+is a fraction between 0 and 1; anything else, including NaN, would be placed
+as a pixel offset of NaN, and there is no way to drag back a button that is
+nowhere at all.
+
 ## A finished text starts again
 
 Press play on a text that has reached its end and it starts from the FIRST
