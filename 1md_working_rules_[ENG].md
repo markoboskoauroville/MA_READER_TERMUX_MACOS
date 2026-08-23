@@ -242,6 +242,18 @@ the app is closed.
 
 ---
 
+## 2e. The delivery gate
+
+modules/delivery-gate.md is the short form of all of this: every gate that
+must be green before a release ships, each one carrying the incident that put
+it there. Read it before a release and after any failure.
+
+It is written to be portable. Nothing in it is specific to this app; any of
+Baba's apps that read keys in a terminal, hold API keys, write settings or
+replace themselves on update has the same failure modes.
+
+---
+
 ## 3. One spoon at a time
 
 Spoon equals step.
