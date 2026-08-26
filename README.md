@@ -132,3 +132,17 @@ the same engine:
 
 Everything in it was verified against the live API rather than read from
 documentation, and each trap that cost a bug is recorded beside the fact.
+
+## macOS
+
+    curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main/3sh_i_ma_reader_v3_macos.sh
+    bash 3sh_i_ma_reader_v3_macos.sh
+
+Then `maread` to run it, `maread-update` to update, `maread-adb` if app
+switching needs its permission.
+
+The command is `maread`, NOT `read`. `read` is a shell builtin and a builtin
+always wins over anything in PATH, so a command by that name can never run.
+
+An older macOS install can be removed first with `bash macos_wipe.sh`, which
+shows what it found before it touches anything.
