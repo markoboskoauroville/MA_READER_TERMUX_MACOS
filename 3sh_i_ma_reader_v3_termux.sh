@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.37
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.38
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.37%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.38%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -2480,7 +2480,15 @@ def wt_apply(mp3_path, json_path, language=None):
         d = json.load(open(json_path, encoding="utf-8"))
     except Exception:
         return False
-    if d.get("engine") == "whisper" or d.get("wt_tried"):
+    # LAYER 2 MUST NOT OVERWRITE LAYER 1 WHEN LAYER 1 IS EXACT.
+    # Speechify returns the true word marks free with its audio: they are not
+    # a measurement, they are what the engine did. Whisper is a measurement,
+    # and a good one at about 80ms, but 80ms is worse than nothing at all.
+    # Re-timing a Speechify clip therefore made the highlight WORSE and spent
+    # a call to do it. Only clips whose times were inferred are re-timed.
+    if d.get("engine") in ("whisper", "speechify"):
+        return False
+    if d.get("wt_tried"):
         return False
     toks = d.get("tokens") or []
     words = [t.get("w", "") for t in toks]
@@ -6081,7 +6089,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.37 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.38 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
