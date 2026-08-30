@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.33
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.35
 #
 # repo: ma-reader-thermux
 #
@@ -1224,8 +1224,58 @@ def lib_text(tid):
 def lib_delete(tid):
     shutil.rmtree(os.path.join(LIB_DIR, tid), ignore_errors=True)
 
+def unit_seat(vkey):
+    """What ACTUALLY produced the sound, as a short folder-safe tag.
+
+    THE CACHE MUST BE KEYED ON WHAT MADE THE AUDIO, not on what was asked for.
+    A Speechify vkey says only "Speechify"; which voice and which model speak
+    is decided later, from the language switch and the two voice seats. So a
+    clip made in English and one made in Croatian used to land in the SAME
+    file, and switching to HR replayed the English clip for ever. That is the
+    bug where the app looked deaf to its own settings.
+
+    An Edge vkey names its own voice, so it needs no tag."""
+    if not str(vkey).startswith("sp_"):
+        return ""
+    try:
+        vid, model = sp_voice_for("", vkey)
+    except Exception:
+        return ""
+    tag = "%s-%s" % (vid, model.replace("simba-", ""))
+    # Letters, digits, underscore and hyphen ONLY. A dot is dropped as well:
+    # without a separator a run of dots cannot traverse anywhere, but a folder
+    # named with ".." in it is a thing someone will later read as dangerous and
+    # have to reason about, and a name nobody has to reason about is better.
+    return "__" + re.sub(r"[^A-Za-z0-9_-]", "", tag)[:40]
+
+
+def unit_seat(vkey):
+    """What ACTUALLY produced the sound, as a short folder-safe tag.
+
+    THE CACHE MUST BE KEYED ON WHAT MADE THE AUDIO, not on what was asked for.
+    A Speechify vkey says only "Speechify"; which voice and which model speak
+    is decided later, from the language switch and the two voice seats. So a
+    clip made in English and one made in Croatian used to land in the SAME
+    file, and switching to HR replayed the English clip for ever. That is the
+    bug where the app looked deaf to its own settings.
+
+    An Edge vkey names its own voice, so it needs no tag."""
+    if not str(vkey).startswith("sp_"):
+        return ""
+    try:
+        vid, model = sp_voice_for("", vkey)
+    except Exception:
+        return ""
+    tag = "%s-%s" % (vid, model.replace("simba-", ""))
+    # Letters, digits, underscore and hyphen ONLY. A dot is dropped as well:
+    # without a separator a run of dots cannot traverse anywhere, but a folder
+    # named with ".." in it is a thing someone will later read as dangerous and
+    # have to reason about, and a name nobody has to reason about is better.
+    return "__" + re.sub(r"[^A-Za-z0-9_-]", "", tag)[:40]
+
+
 def unit_paths(tid, vkey, idx):
-    ad = os.path.join(LIB_DIR, tid, "audio", vkey)
+    ad = os.path.join(LIB_DIR, tid, "audio", vkey + unit_seat(vkey))
     os.makedirs(ad, exist_ok=True)
     base = os.path.join(ad, "s%04d" % idx)
     return base + ".mp3", base + ".tok.json"
@@ -6110,7 +6160,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.33 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.35 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6917,11 +6967,9 @@ function applyEnabledLangs(onSet){
   // ST.voice exactly as it is so the reader remembers the last choice.
   if(shown.length && !shown.some(v=>voiceIsCurrent(v))){
     setVoice(shown[0].id);
-  } else {
-    renderVoices();
   }
   renderLangList();
-  persist();
+  soundChanged("");
 }
 function setVoice(id, quiet){
   /* A Croatian seat is not a catalogue voice, it is a choice of WHICH foreign
@@ -6975,6 +7023,56 @@ function applyEngineCards(){
 }
 /* Changing the language must leave a usable voice behind. If the one in hand
    cannot speak the new language, the first that can is taken. */
+/* ---------- a setting that changes the SOUND takes effect at once ----------
+   Settings used to be a place you visited and left. Change the language while
+   a Croatian page was being read in English and nothing happened: the clips
+   already made were cached, the sentence in hand kept playing, and the app
+   looked deaf to its own switches.
+   Now every control that changes what is HEARD calls this. It drops the
+   caches the old voice filled, and if a sentence is playing it is re-spoken
+   from its own beginning in the new voice, so the change is audible on the
+   line being read rather than the one after next. */
+function soundChanged(why){
+  boundsCache.clear(); silCache.clear();
+  try{ wordCache.clear(); }catch(e){}
+  try{ clearWarm(); }catch(e){}
+  renderVoices();
+  const wasPlaying = ST.playing;
+  const at = ST.idx;
+  try{ pause(); }catch(e){}
+  if(wasPlaying){
+    /* the same sentence again, in the new voice, from its first word */
+    setTimeout(()=>{ try{ startAt(at); }catch(e){} }, 40);
+  }
+  persistNow();
+  if(why) toast(why);
+}
+
+/* ---------- a setting that changes the SOUND takes effect at once ----------
+   Settings used to be a place you visited and left. Change the language while
+   a Croatian page was being read in English and nothing happened: the clips
+   already made were cached, the sentence in hand kept playing, and the app
+   looked deaf to its own switches.
+   Now every control that changes what is HEARD calls this. It drops the
+   caches the old voice filled, and if a sentence is playing it is re-spoken
+   from its own beginning in the new voice, so the change is audible on the
+   line being read rather than the one after next. */
+function soundChanged(why){
+  boundsCache.clear(); silCache.clear();
+  try{ wordCache.clear(); }catch(e){}
+  try{ clearWarm(); }catch(e){}
+  renderVoices();
+  const wasPlaying = ST.playing;
+  const at = ST.idx;
+  try{ pause(); }catch(e){}
+  if(wasPlaying){
+    /* the same sentence again, in the new voice, from its first word */
+    setTimeout(()=>{ try{ startAt(at); }catch(e){} }, 40);
+  }
+  persistNow();
+  if(why) toast(why);
+}
+
 function setLang(l){
   l = (l === "hr" || l === "auto") ? l : "eng";
   if(l === ST.lang) return;
@@ -6990,7 +7088,8 @@ function setLang(l){
     if(first) setVoice(first.id, true);   /* quiet: setLang says it instead */
   }
   renderLangBtn();
-  refreshToggles(); renderVoices(); renderEdgeGrid(); renderLangList();
+  refreshToggles(); renderEdgeGrid(); renderLangList();
+  soundChanged("");
   try{ renderCroGrid(); }catch(e){}
   persist();
   toast(l === "auto" ? "Language decided automatically"
@@ -7128,12 +7227,12 @@ function renderVoiceRadios(){
     });
   };
   draw("#croList", (CROV && CROV.cro) || [], ST.croVoice, v=>{
-    ST.croVoice = v.id; renderVoiceRadios(); renderVoices(); persist();
-    toast(v.name + " reads Croatian");
+    ST.croVoice = v.id; renderVoiceRadios();
+    soundChanged(v.name + " reads Croatian");
   }, true);
   draw("#engList", (CROV && CROV.eng) || [], ST.engVoice, v=>{
-    ST.engVoice = v.id; renderVoiceRadios(); renderVoices(); persist();
-    toast(v.name + " reads English");
+    ST.engVoice = v.id; renderVoiceRadios();
+    soundChanged(v.name + " reads English");
   }, false);
 }
 function renderCroGrid(){ renderVoiceRadios(); }
@@ -8980,8 +9079,9 @@ function bind(){
          Settings is open. Changing it leaves the pane where it was. */
       const want = (ST.engine === "speechify") ? "edge" : "speechify";
       setEngine(want, true);
-      renderLangBtn(); renderVoices(); persist();
-      toast(want === "speechify" ? "Speechify is speaking" : "Edge is speaking");
+      renderLangBtn();
+      soundChanged(want === "speechify" ? "Speechify is speaking"
+                                        : "Edge is speaking");
     };
   }
   /* the Speechify key ring. The file is handed straight to the server; the
