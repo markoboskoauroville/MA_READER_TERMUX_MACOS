@@ -173,7 +173,7 @@ Where the solved problems live:
     KEYRING                       encrypted vault, GitHub sync, biometric gate
     TTT_MINI                      Groq usage, Android keyboard patterns
     MA_READER_SPEECHIFY           SERVER_SCREEN.md, the terminal screen spec
-    ma-reader-thermux             the Speechify key ring, these rules
+    MA_READER_TERMUX_MACOS             the Speechify key ring, these rules
 
 This rule was written on 19.8.2026 after I built a Groq key parser from
 scratch that kept a URL, an email address, a file path and a row of identical
@@ -289,7 +289,7 @@ question that costs him one word to answer is far cheaper than work begun on
 the wrong thing, and much cheaper than a change made to an app nobody in this
 chat has read.
 
-THIS CHAT IS: MA Reader Termux, the repo ma-reader-thermux, a Flask server in
+THIS CHAT IS: MA Reader Termux, the repo MA_READER_TERMUX_MACOS, a Flask server in
 Termux read in a browser at localhost. Anything about a Streamlit app, a
 transcription app, an Android keyboard, a book, a website or a music project
 belongs somewhere else.

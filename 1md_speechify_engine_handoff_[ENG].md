@@ -502,7 +502,7 @@ needs: an accent switch, the four voices, a file picker for the key file, a
 
 Built and verified in the MA Reader Termux project, 12.8.2026.
 
-    https://github.com/markoboskoauroville/ma-reader-thermux
+    https://github.com/markoboskoauroville/MA_READER_TERMUX_MACOS
 
 Tested live with 21 keys: all 21 authenticated, pagination confirmed
 50 -> 962, synthesis and speech mark alignment confirmed character exact,

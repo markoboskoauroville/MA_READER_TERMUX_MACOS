@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.39
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.40
 #
-# repo: ma-reader-thermux
+# repo: MA_READER_TERMUX_MACOS
 #
 # v3 is the first version with two engines in it, and the first where the
 # pause between words is an actual pause. It needs nothing new installed:
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.39%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.40%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -6097,7 +6097,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.39 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.40 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -10661,7 +10661,7 @@ cat > "$BIN/maread-update.new" << 'UPDEOF'
 # Update MA Reader. Nothing is installed until it is asked for.
 A=$'\033[38;5;214m'; G=$'\033[38;5;114m'; R=$'\033[38;5;203m'
 D=$'\033[38;5;245m'; K=$'\033[1;38;5;222m'; W=$'\033[38;5;252m'; O=$'\033[0m'
-RAW="https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main"
+RAW="https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main"
 FILE="3sh_i_ma_reader_v3_termux.sh"
 APPDIR="$HOME/.maread-web"
 

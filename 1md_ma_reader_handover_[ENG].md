@@ -4,7 +4,7 @@ State of the app as of 18.8.2026, v3.14, everything in it verified. This file is
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
-    repo      https://github.com/markoboskoauroville/ma-reader-thermux
+    repo      https://github.com/markoboskoauroville/MA_READER_TERMUX_MACOS
     install   3sh_i_ma_reader_v3_termux.sh
     edition   v3
 
@@ -31,7 +31,7 @@ day, one thumb.
 
 First time, one paste:
 
-    pkg install -y curl && curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main/update.sh && bash update.sh
+    pkg install -y curl && curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main/update.sh && bash update.sh
 
 After that, forever:
 

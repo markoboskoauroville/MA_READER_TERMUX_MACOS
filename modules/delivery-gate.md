@@ -23,7 +23,7 @@ a port and name the source.
     KEYRING                       encrypted vault, GitHub sync, biometric gate
     TTT_MINI                      Groq usage, voice tables, Android patterns
     MAHA_TRANSCRIBE_STREAMLIT     docs/WORD_TIMINGS.md, the timing method
-    ma-reader-thermux             the Speechify key ring, these rules
+    MA_READER_TERMUX_MACOS             the Speechify key ring, these rules
 
 INCIDENT: a Groq key parser written from scratch kept a URL, an email address,
 a file path and a row of identical letters, and would have gravestoned all

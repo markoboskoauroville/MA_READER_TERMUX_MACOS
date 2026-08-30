@@ -7,7 +7,7 @@ as it is spoken. One file installs the whole thing.
 
 ```bash
 pkg install curl
-curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main/update.sh
+curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main/update.sh
 bash update.sh
 ```
 
@@ -135,7 +135,7 @@ documentation, and each trap that cost a bug is recorded beside the fact.
 
 ## macOS
 
-    curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main/3sh_i_ma_reader_v3_macos.sh
+    curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main/3sh_i_ma_reader_v3_macos.sh
     bash 3sh_i_ma_reader_v3_macos.sh
 
 Then `maread` to run it, `maread-update` to update, `maread-adb` if app

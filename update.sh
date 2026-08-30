@@ -13,7 +13,7 @@
 # anonymous, and no token is ever stored on the phone.
 ###############################################################################
 set -e
-RAW="https://raw.githubusercontent.com/markoboskoauroville/ma-reader-thermux/main"
+RAW="https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main"
 FILE="3sh_i_ma_reader_v3_termux.sh"
 
 TMP="$(mktemp -d)"
