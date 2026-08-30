@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.35
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.36
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.35%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.36%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -6113,7 +6113,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.35 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.36 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 

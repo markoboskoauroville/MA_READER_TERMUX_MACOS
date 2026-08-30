@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.35
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.36
 #
 # repo: ma-reader-thermux
 #
@@ -6160,7 +6160,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.35 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.36 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6688,8 +6688,23 @@ function toast(msg){
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove("show"),2600);
 }
-function audioUrl(i){ return `/api/audio/${ST.tid}/${ST.vkey}/${i}.mp3`; }
-function boundsUrl(i){ return `/api/bounds/${ST.tid}/${ST.vkey}/${i}`; }
+/* THE URL MUST NAME THE VOICE THAT WILL SPEAK.
+   A Speechify vkey says only "Speechify"; which voice and which model
+   actually speak is decided from the language switch and the two seats. So
+   two different voices produced the SAME url, and the browser, quite
+   correctly, replayed the clip it already had. The server had been fixed to
+   store them apart and it changed nothing, because the browser never asked.
+   The seat now rides along, and a different voice is a different url. */
+function seatTag(){
+  if(!String(ST.vkey || "").indexOf) return "";
+  if(String(ST.vkey).indexOf("sp_") !== 0) return "";   /* Edge names itself */
+  const l = (ST.lang === "auto") ? (ST.langAuto || "eng") : ST.lang;
+  const seat = (l === "hr") ? (ST.croVoice || "lesya")
+                            : (ST.engVoice || "beatrice_32");
+  return "?v=" + encodeURIComponent(seat + "-" + (l === "hr" ? "m" : "e"));
+}
+function audioUrl(i){ return `/api/audio/${ST.tid}/${ST.vkey}/${i}.mp3` + seatTag(); }
+function boundsUrl(i){ return `/api/bounds/${ST.tid}/${ST.vkey}/${i}` + seatTag(); }
 function clampIdx(i){ return Math.max(0, Math.min(i, ST.sentences.length-1)); }
 function active(){ return players[cur]; }
 
@@ -7023,30 +7038,7 @@ function applyEngineCards(){
 }
 /* Changing the language must leave a usable voice behind. If the one in hand
    cannot speak the new language, the first that can is taken. */
-/* ---------- a setting that changes the SOUND takes effect at once ----------
-   Settings used to be a place you visited and left. Change the language while
-   a Croatian page was being read in English and nothing happened: the clips
-   already made were cached, the sentence in hand kept playing, and the app
-   looked deaf to its own switches.
-   Now every control that changes what is HEARD calls this. It drops the
-   caches the old voice filled, and if a sentence is playing it is re-spoken
-   from its own beginning in the new voice, so the change is audible on the
-   line being read rather than the one after next. */
-function soundChanged(why){
-  boundsCache.clear(); silCache.clear();
-  try{ wordCache.clear(); }catch(e){}
-  try{ clearWarm(); }catch(e){}
-  renderVoices();
-  const wasPlaying = ST.playing;
-  const at = ST.idx;
-  try{ pause(); }catch(e){}
-  if(wasPlaying){
-    /* the same sentence again, in the new voice, from its first word */
-    setTimeout(()=>{ try{ startAt(at); }catch(e){} }, 40);
-  }
-  persistNow();
-  if(why) toast(why);
-}
+
 
 /* ---------- a setting that changes the SOUND takes effect at once ----------
    Settings used to be a place you visited and left. Change the language while
@@ -7058,6 +7050,10 @@ function soundChanged(why){
    from its own beginning in the new voice, so the change is audible on the
    line being read rather than the one after next. */
 function soundChanged(why){
+  /* The three players hold decoded audio from the old voice. Emptying their
+     src is what makes the next play fetch rather than replay. */
+  try{ players.forEach(p=>{ try{ p.pause(); }catch(e){} p.removeAttribute("src");
+                            try{ p.load(); }catch(e){} }); }catch(e){}
   boundsCache.clear(); silCache.clear();
   try{ wordCache.clear(); }catch(e){}
   try{ clearWarm(); }catch(e){}
