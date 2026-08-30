@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.36
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.37
 #
 # repo: ma-reader-thermux
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.36%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.37%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1892,38 +1892,6 @@ def synth_unit(text, voice, mp3_path, json_path):
     json.dump({"tokens": tokens, "bounds": bounds, "total": total,
                "engine": engine, "sil": measure_silence(mp3_path)},
               open(json_path, "w", encoding="utf-8"), ensure_ascii=False)
-    return ""
-
-def synth_file(text, voice, out_mp3):
-    """Speak a whole text into ONE mp3 (used by export)."""
-    try:
-        import edge_tts
-    except Exception:
-        return "edge-tts not installed"
-
-    async def go():
-        com = _communicate(edge_tts, text, voice)
-        with open(out_mp3 + ".part", "wb") as f:
-            async for ch in com.stream():
-                if ch["type"] == "audio":
-                    f.write(ch["data"])
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(go())
-    except Exception as e:
-        try:
-            os.remove(out_mp3 + ".part")
-        except Exception:
-            pass
-        return "export failed: %s" % e
-    finally:
-        loop.close()
-    try:
-        if not os.path.getsize(out_mp3 + ".part"):
-            os.remove(out_mp3 + ".part"); return "no audio produced"
-    except Exception:
-        return "no audio produced"
-    os.replace(out_mp3 + ".part", out_mp3)
     return ""
 
 def export_dir():
@@ -6113,7 +6081,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.36 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.37 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.36
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.37
 #
 # repo: ma-reader-thermux
 #
@@ -1224,30 +1224,6 @@ def lib_text(tid):
 def lib_delete(tid):
     shutil.rmtree(os.path.join(LIB_DIR, tid), ignore_errors=True)
 
-def unit_seat(vkey):
-    """What ACTUALLY produced the sound, as a short folder-safe tag.
-
-    THE CACHE MUST BE KEYED ON WHAT MADE THE AUDIO, not on what was asked for.
-    A Speechify vkey says only "Speechify"; which voice and which model speak
-    is decided later, from the language switch and the two voice seats. So a
-    clip made in English and one made in Croatian used to land in the SAME
-    file, and switching to HR replayed the English clip for ever. That is the
-    bug where the app looked deaf to its own settings.
-
-    An Edge vkey names its own voice, so it needs no tag."""
-    if not str(vkey).startswith("sp_"):
-        return ""
-    try:
-        vid, model = sp_voice_for("", vkey)
-    except Exception:
-        return ""
-    tag = "%s-%s" % (vid, model.replace("simba-", ""))
-    # Letters, digits, underscore and hyphen ONLY. A dot is dropped as well:
-    # without a separator a run of dots cannot traverse anywhere, but a folder
-    # named with ".." in it is a thing someone will later read as dangerous and
-    # have to reason about, and a name nobody has to reason about is better.
-    return "__" + re.sub(r"[^A-Za-z0-9_-]", "", tag)[:40]
-
 
 def unit_seat(vkey):
     """What ACTUALLY produced the sound, as a short folder-safe tag.
@@ -1934,38 +1910,6 @@ def synth_unit(text, voice, mp3_path, json_path):
     json.dump({"tokens": tokens, "bounds": bounds, "total": total,
                "engine": engine, "sil": measure_silence(mp3_path)},
               open(json_path, "w", encoding="utf-8"), ensure_ascii=False)
-    return ""
-
-def synth_file(text, voice, out_mp3):
-    """Speak a whole text into ONE mp3 (used by export)."""
-    try:
-        import edge_tts
-    except Exception:
-        return "edge-tts not installed"
-
-    async def go():
-        com = _communicate(edge_tts, text, voice)
-        with open(out_mp3 + ".part", "wb") as f:
-            async for ch in com.stream():
-                if ch["type"] == "audio":
-                    f.write(ch["data"])
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(go())
-    except Exception as e:
-        try:
-            os.remove(out_mp3 + ".part")
-        except Exception:
-            pass
-        return "export failed: %s" % e
-    finally:
-        loop.close()
-    try:
-        if not os.path.getsize(out_mp3 + ".part"):
-            os.remove(out_mp3 + ".part"); return "no audio produced"
-    except Exception:
-        return "no audio produced"
-    os.replace(out_mp3 + ".part", out_mp3)
     return ""
 
 def export_dir():
@@ -6160,7 +6104,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.36 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.37 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
