@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.38
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.39
 #
 # repo: ma-reader-thermux
 #
@@ -922,10 +922,16 @@ SETUP_LOG="$APPDIR/install.log"; : > "$SETUP_LOG"
 
 # a plain gold M on near black, so the home screen entry is not a blank square
 cat > "$APPDIR/static/icon.svg" << 'ICONEOF'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="42" fill="#080a10"/>
-  <text x="96" y="132" font-family="Georgia,serif" font-size="112"
-        font-weight="700" fill="#fadf9c" text-anchor="middle">M</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"
+     aria-label="MA Reader">
+  <!-- Three lines of text with the one being read lit. That is the whole app
+       in one glyph, and it is the only shape that survives 16 pixels: an
+       earlier version broke the middle line into separate words and they
+       merged into mush in a browser tab. -->
+  <rect width="64" height="64" rx="14" fill="#0a0d14"/>
+  <rect x="11" y="15" width="42" height="6" rx="3" fill="#3f4557"/>
+  <rect x="11" y="28" width="30" height="9" rx="4.5" fill="#ebcd2d"/>
+  <rect x="11" y="44" width="34" height="6" rx="3" fill="#3f4557"/>
 </svg>
 ICONEOF
 
@@ -5028,6 +5034,8 @@ cat > "$APPDIR/static/index.html" << 'HTMLEOF'
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<link rel="mask-icon" href="/static/icon.svg" color="#ebcd2d">
 <link rel="apple-touch-icon" href="/static/icon.svg">
 <title>MA Reader</title>
 <style>
@@ -6112,7 +6120,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.38 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.39 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
