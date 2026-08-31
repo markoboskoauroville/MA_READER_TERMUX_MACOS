@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.40
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.41
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.40%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.41%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -6097,7 +6097,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.40 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.41 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -10491,6 +10491,25 @@ lan_ip(){
     || true
 }
 
+# ------------------------------------------------------------ [U] update ----
+# The updater REPLACES the running server, so the server has to go first. It
+# is stopped here, on purpose and in view, rather than being found and killed
+# by the installer while this loop still waits on a pid that has gone.
+#
+# exec hands the terminal over: the updater then owns the screen, asks its own
+# questions and keeps its own exit code, and this launcher does not linger
+# behind it holding a wake lock or a stale menu.
+do_update(){
+  if ! command -v maread-update >/dev/null 2>&1; then
+    printf '   %smaread-update is not installed%s\n' "$DIMC" "$OFFC"
+    return 0
+  fi
+  printf '   %sstopping the server first%s\n' "$DIMC" "$OFFC"
+  cleanup
+  echo ""
+  exec maread-update
+}
+
 show_head(){   # $1 = the port actually in use
   IP="$(lan_ip)"
   echo ""
@@ -10507,6 +10526,7 @@ show_head(){   # $1 = the port actually in use
   ruleC
   printf '    %s[O]%s %sopen in Chrome%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
   printf '    %s[A]%s %sopen in the default browser%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
+  printf '    %s[U]%s %supdate the app%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
   printf '    %s[Q]%s %sstop%s\n' "$KEYC" "$OFFC" "$DIMC" "$OFFC"
   ruleC
   echo ""
@@ -10626,6 +10646,7 @@ if [ -t 0 ]; then
              open_url "$(url_now)" chrome ;;
         a|A) printf '   %sopening in the default browser%s\n' "$DIMC" "$OFFC"
              open_default "$(url_now)" ;;
+        u|U) do_update ;;
         q|Q) break ;;
       esac
     fi
