@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.41
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.42
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -6120,7 +6120,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.41 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.42 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -7912,6 +7912,12 @@ const MD = {on:false, root:null, spans:[], gaps:[], spoken:"",
 /* ---------- rendering the document ---------- */
 function renderDoc(){
   const doc = $("#doc"); doc.innerHTML = ""; wordCache.clear();
+  /* BACK TO THE TOP, ALWAYS. The reader keeps 78vh of blank page after the
+     last word so the final sentence can also travel to the top. Nothing reset
+     the scroll when a new text arrived, so a reader left scrolled down showed
+     the new text's EMPTY TAIL: a black screen with nothing on it, which is
+     exactly what a broken app looks like. A new text starts at its beginning. */
+  try{ const sc = $("#readerScroll"); if(sc) sc.scrollTop = 0; }catch(e){}
   /* PHASE 2. The Markdown was parsed ONCE, before /api/prepare was called,
      and its words were wrapped in spans then. Those very nodes are MOVED into
      the page here - not parsed again, not re-serialised - so there is exactly

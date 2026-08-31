@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.41
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.42
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.41%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.42%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -6097,7 +6097,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.41 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.42 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6625,8 +6625,23 @@ function toast(msg){
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove("show"),2600);
 }
-function audioUrl(i){ return `/api/audio/${ST.tid}/${ST.vkey}/${i}.mp3`; }
-function boundsUrl(i){ return `/api/bounds/${ST.tid}/${ST.vkey}/${i}`; }
+/* THE URL MUST NAME THE VOICE THAT WILL SPEAK.
+   A Speechify vkey says only "Speechify"; which voice and which model
+   actually speak is decided from the language switch and the two seats. So
+   two different voices produced the SAME url, and the browser, quite
+   correctly, replayed the clip it already had. The server had been fixed to
+   store them apart and it changed nothing, because the browser never asked.
+   The seat now rides along, and a different voice is a different url. */
+function seatTag(){
+  if(!String(ST.vkey || "").indexOf) return "";
+  if(String(ST.vkey).indexOf("sp_") !== 0) return "";   /* Edge names itself */
+  const l = (ST.lang === "auto") ? (ST.langAuto || "eng") : ST.lang;
+  const seat = (l === "hr") ? (ST.croVoice || "lesya")
+                            : (ST.engVoice || "beatrice_32");
+  return "?v=" + encodeURIComponent(seat + "-" + (l === "hr" ? "m" : "e"));
+}
+function audioUrl(i){ return `/api/audio/${ST.tid}/${ST.vkey}/${i}.mp3` + seatTag(); }
+function boundsUrl(i){ return `/api/bounds/${ST.tid}/${ST.vkey}/${i}` + seatTag(); }
 function clampIdx(i){ return Math.max(0, Math.min(i, ST.sentences.length-1)); }
 function active(){ return players[cur]; }
 
@@ -7868,6 +7883,12 @@ const MD = {on:false, root:null, spans:[], gaps:[], spoken:"",
 /* ---------- rendering the document ---------- */
 function renderDoc(){
   const doc = $("#doc"); doc.innerHTML = ""; wordCache.clear();
+  /* BACK TO THE TOP, ALWAYS. The reader keeps 78vh of blank page after the
+     last word so the final sentence can also travel to the top. Nothing reset
+     the scroll when a new text arrived, so a reader left scrolled down showed
+     the new text's EMPTY TAIL: a black screen with nothing on it, which is
+     exactly what a broken app looks like. A new text starts at its beginning. */
+  try{ const sc = $("#readerScroll"); if(sc) sc.scrollTop = 0; }catch(e){}
   /* PHASE 2. The Markdown was parsed ONCE, before /api/prepare was called,
      and its words were wrapped in spans then. Those very nodes are MOVED into
      the page here - not parsed again, not re-serialised - so there is exactly
