@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.42
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.43
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -3632,7 +3632,8 @@ def load_state():
         st["font"] = "sans"
     if st.get("pane") not in ("edge", "speechify", "app"):
         st["pane"] = "app"
-    if st.get("mode") not in ("read", "text"):
+    # read is the only mode; text and edit were removed with their buttons
+    if st.get("mode") != "read":
         st["mode"] = "read"          # edit is never restored
     if st.get("engine") not in ("edge", "speechify"):
         st["engine"] = "edge"
@@ -4712,6 +4713,93 @@ def api_bounds(tid, vkey, idx):
         data = {"tokens": []}
     return jsonify(data)
 
+@app.route("/api/download_one", methods=["POST"])
+def api_download_one():
+    """Every sentence of a text, joined into ONE mp3.
+
+    The reader keeps its clips apart because it speaks one sentence at a time.
+    Keeping a reading means putting them back together.
+
+    ffmpeg is used when it is there, because it rewrites the frame headers and
+    the result seeks properly. Without it the frames are simply concatenated,
+    which every player will play from the start but some will seek badly in.
+    That is worth saying rather than pretending both paths are equal."""
+    data = request.get_json(force=True, silent=True) or {}
+    tid = str(data.get("tid") or "")
+    vkey = str(data.get("vkey") or "")
+    if not tid or not vkey:
+        return jsonify({"error": "nothing to save"}), 400
+    txt = lib_text(tid)
+    if not txt:
+        return jsonify({"error": "that text is gone"}), 404
+    spans = split_sentences(txt)
+    if not spans:
+        return jsonify({"error": "nothing to save"}), 400
+
+    parts = []
+    for i in range(len(spans)):
+        mp3, _js, err = ensure_unit(tid, vkey, i)
+        if err:
+            return jsonify({"error": "Sentence %d: %s" % (i + 1, err)}), 400
+        parts.append(mp3)
+
+    name = re.sub(r"[^A-Za-z0-9 _.-]", "", txt[:60]).strip()[:48] or "reading"
+    name = "%s.mp3" % name
+    ed = export_dir()
+    out = os.path.join(ed, name)
+    try:
+        os.makedirs(ed, exist_ok=True)
+    except Exception:
+        pass
+
+    joined = False
+    if shutil.which("ffmpeg"):
+        lst = out + ".txt"
+        try:
+            with open(lst, "w", encoding="utf-8") as f:
+                for p in parts:
+                    f.write("file '%s'\n" % p.replace("'", "'\\''"))
+            r = subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                                "-i", lst, "-c", "copy", out],
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=600)
+            joined = (r.returncode == 0 and os.path.exists(out)
+                      and os.path.getsize(out) > 1000)
+        except Exception:
+            joined = False
+        finally:
+            try:
+                os.remove(lst)
+            except Exception:
+                pass
+    if not joined:
+        try:
+            with open(out + ".part", "wb") as f:
+                for p in parts:
+                    with open(p, "rb") as g:
+                        shutil.copyfileobj(g, f)
+            os.replace(out + ".part", out)
+            joined = os.path.getsize(out) > 1000
+        except Exception as e:
+            return jsonify({"error": "could not join: %s" % str(e)[:60]}), 500
+    if not joined:
+        return jsonify({"error": "the joined file came out empty"}), 500
+    return jsonify({"ok": True, "file": name, "name": name,
+                    "sentences": len(parts), "bytes": os.path.getsize(out),
+                    "exact": bool(shutil.which("ffmpeg"))})
+
+
+@app.route("/api/download_one/<path:fn>")
+def api_download_one_get(fn):
+    """Hand the joined file to the browser as a normal download."""
+    safe = os.path.basename(fn)
+    p = os.path.join(export_dir(), safe)
+    if not os.path.exists(p):
+        return jsonify({"error": "not found"}), 404
+    return send_file(p, mimetype="audio/mpeg", as_attachment=True,
+                     download_name=safe)
+
+
 @app.route("/api/export", methods=["POST"])
 def api_export():
     data = request.get_json(force=True, silent=True) or {}
@@ -5554,6 +5642,11 @@ body.mode-edit .doc.mdhidden{display:none}
 .htog.sp{border-color:var(--tune);
   background:color-mix(in srgb, var(--tune) 16%, var(--panel))}
 .htog.auto b{font-size:10px}
+.htog-gap{width:8px; display:inline-block}
+.htog.fl{min-width:34px; padding:9px 8px; color:var(--faint);
+  border-color:var(--line); background:var(--panel)}
+.htog.fl.on{color:var(--text); border-color:var(--tune);
+  background:color-mix(in srgb, var(--tune) 16%, var(--panel))}
 .sheet-head{position:sticky; top:0; z-index:6; background:var(--bg2);
   display:flex; align-items:center; justify-content:center;
   margin:0 -16px 12px; padding:2px 16px 10px; border-bottom:1px solid var(--line)}
@@ -5648,6 +5741,12 @@ body:not(.inreader):not(.onhome) .voices{display:none}
 .yt-num i{font-size:7.5px; font-style:normal; letter-spacing:.06em;
   text-transform:uppercase; color:var(--faint); margin-top:3px}
 /* play/pause: brightest, flat, no circle or coloured fill */
+.yt-dl{flex:0 0 auto; width:44px; height:44px; padding:0; border-radius:50%;
+  border:1px solid var(--line); background:transparent; color:var(--dim)}
+.yt-dl svg{width:21px; height:21px; display:block; margin:0 auto}
+.yt-dl:active{border-color:var(--tune); color:var(--tune)}
+.yt-dl.busy{color:var(--tune); border-color:var(--tune); opacity:.7}
+.yt-dl[disabled]{opacity:.3}
 .yt-play{width:52px; height:52px; border:none; background:transparent;
   color:var(--text); display:flex; align-items:center; justify-content:center;
   padding:0; margin:0 2px}
@@ -6052,11 +6151,17 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
           title="How much is left. Press to clear and start again.">0 / 0</button>
       </div>
       <div class="yt-bar">
-        <div class="ytgroup modes" id="modeRow">
-          <button class="modebtn on" data-mode="read">read</button>
-          <button class="modebtn" data-mode="text">text</button>
-          <button class="modebtn" data-mode="edit">edit</button>
-        </div>
+        <!-- The three modes are gone. Reading is the only mode, so a row of
+             buttons that says so was three ways to leave it by accident. In
+             their place, the one thing the bar was missing: the whole text as
+             a single file. -->
+        <button class="yt-dl" id="dlBtn" title="Save the whole text as one mp3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/>
+            <path d="M4.5 19.5h15"/>
+          </svg>
+        </button>
         <button class="yt-play" id="playBtn" title="Play / Pause"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L8.53 4.65A1 1 0 0 0 7 5.5z"/></svg></button>
         <div class="ytstep">
           <button class="yt-mini" data-step="speed" data-d="-1" title="Slower">&#8722;</button>
@@ -6100,11 +6205,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
           title="How much is left. Press to clear and start again.">0 / 0</button>
       </div>
       <div class="yt-bar">
-        <div class="ytgroup modes" id="offModeRow">
-          <button class="modebtn on" data-mode="read">read</button>
-          <button class="modebtn" data-mode="text">text</button>
-          <button class="modebtn" data-mode="edit">edit</button>
-        </div>
+
         <button class="yt-play" id="offPlay" title="Play / Pause"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L8.53 4.65A1 1 0 0 0 7 5.5z"/></svg></button>
         <div class="ytstep">
           <button class="yt-mini" data-step="speed" data-d="-1" title="Slower">&#8722;</button>
@@ -6120,7 +6221,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.42 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.43 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6215,9 +6316,17 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
          are reachable without scrolling: WHICH ENGINE speaks, and WHICH
          LANGUAGE is being read. Both name the state they are in and flip on
          a press. -->
+    <!-- The dashboard: what the app is doing, and which of the three floating
+         buttons are on screen. Everything here is a state that changes often,
+         which is why it is above everything else and reachable without
+         scrolling. -->
     <div class="headtogs">
       <button class="htog" id="engBtn"><b>EDGE</b></button>
       <button class="htog" id="langBtn"><b>ENG</b></button>
+      <span class="htog-gap"></span>
+      <button class="htog fl" id="flP" title="The floating paste button"><b>P</b></button>
+      <button class="htog fl" id="flF" title="The floating full screen button"><b>&#9678;</b></button>
+      <button class="htog fl" id="flS" title="The floating app switcher"><b>&#8646;</b></button>
     </div>
     <button class="sheet-x" id="sheetX" title="Close">&#10005;</button>
     <span class="sheet-ver" id="appVerTop"></span>
@@ -6367,9 +6476,6 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="resumeTog">Remember position</button>
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
-      <button class="chip" id="floatTog">Floating paste button</button>
-      <button class="chip" id="floatFTog">Floating full screen button</button>
-      <button class="chip" id="floatSTog">Floating app switcher</button>
       <button class="chip" id="adbTog">ADB mode on start</button>
       <button class="chip" id="swTest">Test the switcher</button>
     </div>
@@ -7057,6 +7163,62 @@ function setLang(l){
    setLang does not. So the language changed, the toast fired, and the button
    went on showing the old word. One painter, called by everyone who can
    change the language, is the whole fix. */
+/* ---------- the whole text as ONE file ----------
+   The reader speaks a sentence at a time and keeps the clips apart, which is
+   right for reading and wrong for keeping. This asks the server to join them
+   into a single mp3, so a text read once can be carried away and played
+   anywhere, as many times as he likes.
+
+   Every sentence has to exist before they can be joined, so the button says
+   what it is doing rather than appearing to hang: a long text may need a
+   minute the first time, and nothing at all the second. */
+function downloadOne(){
+  const b = $("#dlBtn"); if(!b) return;
+  if(!ST.tid){ toast("Nothing to save yet."); return; }
+  if(b.classList.contains("busy")) return;
+  b.classList.add("busy");
+  toast("Making one file. The first time takes a moment.");
+  api("/api/download_one", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({tid: ST.tid, vkey: ST.vkey})})
+    .then(r=>r.json()).then(d=>{
+      b.classList.remove("busy");
+      if(d.error){ toast(d.error); return; }
+      toast("Saved: " + (d.name || "one mp3"));
+      /* handed to the browser as a normal download, so it lands wherever
+         downloads land on this machine and needs no file permission */
+      const a = document.createElement("a");
+      a.href = "/api/download_one/" + encodeURIComponent(d.file);
+      a.download = d.name || "reading.mp3";
+      document.body.appendChild(a); a.click(); a.remove();
+    })
+    .catch(()=>{ b.classList.remove("busy"); toast("Could not make the file."); });
+}
+/* The three floater switches live on the dashboard now. They were buried in
+   Advanced, which is a poor home for something toggled several times a day. */
+function renderFloatTogs(){
+  const rows = [["#flP","floatPaste","hasfloat",placeFloat],
+                ["#flF","floatFull","hasfloatf",placeFloatF],
+                ["#flS","floatSwap","hasfloats",placeFloatS]];
+  rows.forEach(([sel,key])=>{
+    const b = $(sel); if(!b) return;
+    b.classList.toggle("on", !!ST[key]);
+  });
+}
+function wireFloatTogs(){
+  const rows = [["#flP","floatPaste",placeFloat,"paste button"],
+                ["#flF","floatFull",placeFloatF,"full screen button"],
+                ["#flS","floatSwap",placeFloatS,"app switcher"]];
+  rows.forEach(([sel,key,place,label])=>{
+    const b = $(sel); if(!b) return;
+    b.onclick = ()=>{
+      ST[key] = !ST[key];
+      refreshToggles(); renderFloatTogs(); persistNow();
+      if(ST[key]){ try{ place(); }catch(e){} }
+      toast(label + (ST[key] ? " shown" : " hidden"));
+    };
+  });
+}
 function renderLangBtn(){
   const eb = $("#engBtn");
   if(eb){
@@ -8592,9 +8754,6 @@ function refreshToggles(){
   { const b=$("#fullPasteTog"); if(b) b.classList.toggle("on", !!ST.fullOnPaste); }
   { const b=$("#hideTabsTog"); if(b) b.classList.toggle("on", !!ST.hideTabs); }
   document.body.classList.toggle("notabs", !!ST.hideTabs);
-  { const b=$("#floatTog"); if(b) b.classList.toggle("on", !!ST.floatPaste); }
-  { const b=$("#floatFTog"); if(b) b.classList.toggle("on", !!ST.floatFull); }
-  { const b=$("#floatSTog"); if(b) b.classList.toggle("on", !!ST.floatSwap); }
   { const b=$("#adbTog"); if(b) b.classList.toggle("on", !!ST.adbMode); }
   { const b=$("#chromeTog"); if(b) b.classList.toggle("on", ST.browser !== "auto"); }
   { const b=$("#voiceBarTog"); if(b) b.classList.toggle("on", !!ST.voiceBar); }
@@ -9032,6 +9191,8 @@ function bind(){
   /* The two head toggles. Bound once, outside the tab loop; they were inside
      it, which set the same handler three times and left the engine toggle
      unbound altogether. */
+  { const b=$("#dlBtn"); if(b) b.onclick = downloadOne; }
+  wireFloatTogs();
   { const lb = $("#langBtn");
     if(lb) lb.onclick = ()=> setLang(nextLang());
   }
@@ -9136,31 +9297,6 @@ function bind(){
                       : (d.hint || "Not available on this phone."));
         const el=$("#floatS"); if(el) el.classList.toggle("notready", !d.ready);
       }).catch(()=> toast("Could not reach the server."));
-    };
-  }
-  { const b=$("#floatSTog");
-    if(b) b.onclick = ()=>{
-      ST.floatSwap = !ST.floatSwap;
-      refreshToggles(); persist();
-      if(ST.floatSwap){ placeFloatS(); wireFloatS(); toast("App switcher shown"); }
-      else toast("App switcher hidden");
-    };
-  }
-  { const b=$("#floatFTog");
-    if(b) b.onclick = ()=>{
-      ST.floatFull = !ST.floatFull;
-      refreshToggles(); persist();
-      if(ST.floatFull) placeFloatF();
-      toast(ST.floatFull ? "Drag the dot anywhere you like"
-                         : "Full screen button hidden");
-    };
-  }
-  { const b=$("#floatTog");
-    if(b) b.onclick = ()=>{
-      ST.floatPaste = !ST.floatPaste;
-      refreshToggles(); persist();
-      if(ST.floatPaste) placeFloat();
-      toast(ST.floatPaste ? "Drag the P anywhere you like" : "Floating button hidden");
     };
   }
   { const c=$("#catchGo"), x=$("#catchCancel"), b=$("#catchBox");
@@ -9297,7 +9433,11 @@ function jumpToPlayer(){
    Play belongs to READ alone: in the other two there is nothing to follow,
    and a voice talking over an edit is a nuisance rather than a feature. */
 function setMode(m){
-  if(m !== "read" && m !== "text" && m !== "edit") m = "read";
+  /* READ IS THE ONLY MODE NOW. The buttons are gone, so nothing can ask for
+     text or edit any more, but a settings file written by an older version
+     still can, and it would arrive in a mode with no way out of it. Anything
+     that is not read becomes read, here, once, at the door. */
+  m = "read";
   if(m !== "read" && ST.playing){ try{ pause(); }catch(e){} }
   if(ST.mode === "edit" && m !== "edit") commitEdit();
   ST.mode = m;
