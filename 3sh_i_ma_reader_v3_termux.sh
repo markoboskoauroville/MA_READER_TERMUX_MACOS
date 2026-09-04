@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.43
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.44
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.43%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.44%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1212,6 +1212,13 @@ def lib_text(tid):
 
 def lib_delete(tid):
     shutil.rmtree(os.path.join(LIB_DIR, tid), ignore_errors=True)
+
+# A STANDING KEY, not a voice. "sp_seat" means "whatever the language switch
+# and the two voice seats say right now", resolved on EVERY request rather
+# than fixed when it was chosen. It is what makes changing the engine or the
+# language take effect on the sentence being read instead of the next text.
+SP_SEAT_VKEY = "sp_seat"
+
 
 def unit_seat(vkey):
     """What ACTUALLY produced the sound, as a short folder-safe tag.
@@ -2893,6 +2900,7 @@ def sp_voice_for(text, voice_id):
     else:
         v = sp_seat(eng_voice_id(), ENG_VOICES, ENG_DEFAULT)
     return v["id"], v["model"]
+
 SP_PAGE = 200                 # the API caps a page here; default is only 50
 SP_MAX_PAGES = 12
 SP_LIMITED_REST = 300         # seconds a 429'd key is stood down before retry
@@ -3470,7 +3478,9 @@ def ensure_unit(tid, vkey, idx):
     """Make sure sentence (tid,vkey,idx) has an mp3 + bounds json. Returns
     (mp3_path, json_path, error). Units cached before v11 get their timing
     upgraded to waveform-measured times the first time they are used."""
-    if vkey not in VKEYS and vkey not in SP_VOICES:
+    if vkey == SP_SEAT_VKEY:
+        pass                       # always valid: it resolves per request
+    elif vkey not in VKEYS and vkey not in SP_VOICES:
         # A Speechify voice the catalogue has not been asked for yet this run
         # (a resume, say). Rebuild the catalogue once and look again.
         if vkey.startswith("sp_"):
@@ -3496,7 +3506,11 @@ def ensure_unit(tid, vkey, idx):
         if idx < 0 or idx >= payload["count"]:
             return None, None, "out of range"
         sent = payload["sentences"][idx]
-        if vkey in SP_VOICES:
+        if vkey == SP_SEAT_VKEY:
+            # the standing key: sp_voice_for reads the language and the seats
+            # afresh, so the sentence is spoken by whoever is chosen NOW
+            err = synth_unit_speechify(sent, "", mp3, js)
+        elif vkey in SP_VOICES:
             err = synth_unit_speechify(sent, SP_VOICES[vkey]["id"], mp3, js)
         else:
             err = synth_unit(sent, VOICE_BY_VKEY[vkey][0], mp3, js)
@@ -5627,11 +5641,15 @@ body.mode-edit .doc.mdhidden{display:none}
 .sheet-head{position:sticky; top:0; z-index:6; background:var(--bg2);
   display:flex; align-items:center; justify-content:center;
   margin:0 -16px 12px; padding:2px 16px 10px; border-bottom:1px solid var(--line)}
-.sheet-ver{position:absolute; right:16px; top:50%; transform:translateY(-60%);
+.sheet-ver{position:absolute; right:70px; top:50%; transform:translateY(-60%);
   font-size:11px; color:var(--faint); letter-spacing:.02em}
 /* One X, in the middle, pinned to the top of the sheet. It does not scroll
    away and it says nothing, because there is nothing to say. */
-.sheet-x{flex:0 0 auto; width:46px; height:46px; margin:0 0 6px; padding:0;
+/* The X sat in the middle, where the dashboard now is, and the floater
+   switches covered it. It goes to the far right, which is also where a
+   thumb expects a close button, and the dashboard gets the whole left. */
+.sheet-x{position:absolute; right:14px; top:50%; transform:translateY(-50%);
+  width:46px; height:46px; margin:0; padding:0;
   border:1px solid var(--line); background:var(--panel); color:var(--dim);
   border-radius:50%; font-size:19px; line-height:1;
   display:flex; align-items:center; justify-content:center}
@@ -6198,7 +6216,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.43 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.44 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -7035,6 +7053,14 @@ function setVoice(id, quiet){
   if(typeof id === "string" && id.indexOf("cro:") === 0){
     const _l = (ST.lang === "auto") ? (ST.langAuto || "eng") : ST.lang;
     if(_l === "hr") ST.croVoice = id.slice(4); else ST.engVoice = id.slice(4);
+    /* THE VOICE KEY MUST MOVE TOO. This branch used to set the seat and
+       return, leaving ST.vkey pointing at whatever Edge voice was last used,
+       so every request still went to Edge and switching engine appeared to
+       do nothing at all. sp_seat is a standing key meaning "whatever the
+       seats and the language currently say", which the server resolves on
+       every request rather than once. */
+    ST.vkey = "sp_seat";
+    ST.voice = id;
     if(ST.engine !== "speechify"){ ST.engine = "speechify"; applyEngineCards(); }
     renderVoices(); try{ renderCroGrid(); }catch(e){}
     persist();
@@ -7226,8 +7252,34 @@ function setEngine(e, quiet){
   const changed = (e !== ST.engine);
   ST.engine = e;
   applyEngineCards();
+  /* An engine change must land on a voice that BELONGS to the new engine.
+     voiceIsCurrent knows about seats; comparing ids does not, so a seat was
+     never recognised as current and the first one was chosen again, through
+     the branch that forgot to move the key. */
+  /* THE KEY MUST FOLLOW THE ENGINE, even when the voice list is not loaded.
+     shownVoices() is empty until /api/cro_voices has answered, and an engine
+     change that happens first used to leave ST.vkey on an Edge voice: the
+     engine said Speechify and every request still went to Edge. The key is
+     therefore set from the ENGINE, which is known immediately, and the list
+     only refines WHICH voice within it. */
+  if(e === "speechify"){
+    ST.vkey = "sp_seat";
+  } else if(String(ST.vkey || "").indexOf("sp_") === 0){
+    /* Coming back to Edge. topEdge() is empty until the voices have loaded,
+       so a remembered Edge key is used, then any Edge voice, and only then
+       the list. Without this the return leg silently kept the Speechify key
+       and going back to Edge did nothing, which is the same bug in reverse. */
+    const back = topEdge()[0] || (ST.voices || []).find(v => v.lang === langCode())
+                 || (ST.voices || [])[0];
+    if(back){ ST.voice = back.id; ST.vkey = back.vkey; }
+    else if(ST.edgeVkey){ ST.vkey = ST.edgeVkey; }
+    else { ST.vkey = (langCode() === "hr") ? "hrF" : "ukF"; }
+  }
+  if(e === "edge" && String(ST.vkey || "").indexOf("sp_") !== 0) ST.edgeVkey = ST.vkey;
+  boundsCache.clear(); silCache.clear();
+  try{ clearWarm(); }catch(err){}
   const list = shownVoices();
-  if(list.length && !list.some(v=>v.id===ST.voice)){
+  if(list.length && !list.some(v=>voiceIsCurrent(v))){
     /* remember which Speechify voice was last used, so switching back and
        forth does not keep resetting to the first of the four */
     const want = (e === "speechify" && ST.spVkey)
