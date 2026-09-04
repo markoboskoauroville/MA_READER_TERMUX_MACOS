@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.44
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.45
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.44%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.45%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -5633,11 +5633,6 @@ body.mode-edit .doc.mdhidden{display:none}
 .htog.sp{border-color:var(--tune);
   background:color-mix(in srgb, var(--tune) 16%, var(--panel))}
 .htog.auto b{font-size:10px}
-.htog-gap{width:8px; display:inline-block}
-.htog.fl{min-width:34px; padding:9px 8px; color:var(--faint);
-  border-color:var(--line); background:var(--panel)}
-.htog.fl.on{color:var(--text); border-color:var(--tune);
-  background:color-mix(in srgb, var(--tune) 16%, var(--panel))}
 .sheet-head{position:sticky; top:0; z-index:6; background:var(--bg2);
   display:flex; align-items:center; justify-content:center;
   margin:0 -16px 12px; padding:2px 16px 10px; border-bottom:1px solid var(--line)}
@@ -6216,7 +6211,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.44 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.45 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6311,17 +6306,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
          are reachable without scrolling: WHICH ENGINE speaks, and WHICH
          LANGUAGE is being read. Both name the state they are in and flip on
          a press. -->
-    <!-- The dashboard: what the app is doing, and which of the three floating
-         buttons are on screen. Everything here is a state that changes often,
-         which is why it is above everything else and reachable without
-         scrolling. -->
     <div class="headtogs">
       <button class="htog" id="engBtn"><b>EDGE</b></button>
       <button class="htog" id="langBtn"><b>ENG</b></button>
-      <span class="htog-gap"></span>
-      <button class="htog fl" id="flP" title="The floating paste button"><b>P</b></button>
-      <button class="htog fl" id="flF" title="The floating full screen button"><b>&#9678;</b></button>
-      <button class="htog fl" id="flS" title="The floating app switcher"><b>&#8646;</b></button>
     </div>
     <button class="sheet-x" id="sheetX" title="Close">&#10005;</button>
     <span class="sheet-ver" id="appVerTop"></span>
@@ -6343,6 +6330,12 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="yt-num" data-reset="lag" title="Tap to reset to 0.00"><b id="lagNum">0.00</b><i>scroll delay</i></button>
       <button class="yt-mini" data-step="lag" data-d="1" title="Wait longer before jumping">+</button>
     </div>
+    <!-- The three floating buttons, each switched on its own. They were in
+         the sheet head, where they sat on top of the version and the close
+         button; a row that already holds switches is where a switch belongs. -->
+    <button class="chip" id="flP">Floating paste</button>
+    <button class="chip" id="flF">Floating full screen</button>
+    <button class="chip" id="flS">Floating switcher</button>
   </div>
   <!-- Three panes, not two engines. A person looking for the font should
        not have to guess whether it lives under Edge or under Speechify. -->
