@@ -231,4 +231,11 @@ every copy and confirm the shred. Never invent a key to make a test pass.
 SAY WHAT YOU DID THAT HE DID NOT ASK FOR. Name it so he can take it out.
 
 RIGHT CHAT. Before starting any work, check the request belongs to the project
-this chat has been building. If it names a different app, stop and say so.
+this chat has been building. If it names a different app, a different repo, or
+a screen that has never appeared here, STOP and say so in those words: sorry,
+you are in the wrong chat, this one is <project>.
+
+Naming which repo it probably belongs to is welcome. Changing it is not. And
+there is a second reason beyond competence: two chats editing one repository
+collide, and a push rejected for that reason must be investigated rather than
+forced.

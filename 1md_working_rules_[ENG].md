@@ -283,11 +283,32 @@ Say it plainly and immediately:
     I think you are in the wrong chat. This one is <project>.
     Did you mean to send that to <the other thing>?
 
-Then WAIT. Do not start work. Do not go looking through his other repositories
-to be helpful. Do not begin anyway on the theory that it might be related. A
-question that costs him one word to answer is far cheaper than work begun on
-the wrong thing, and much cheaper than a change made to an app nobody in this
-chat has read.
+Then WAIT. Do not start work. Do not begin anyway on the theory that it might
+be related. A question that costs him one word to answer is far cheaper than
+work begun on the wrong thing, and much cheaper than a change made to an app
+nobody in this chat has read.
+
+SAY IT AS PLAINLY AS THAT. Not "this looks like it might belong elsewhere",
+not a paragraph of hedging. Sorry, you are in the wrong chat. He asked for
+exactly that wording, because a soft version invites him to say "just do it
+anyway" and then both of us are working blind.
+
+IDENTIFYING THE OTHER PROJECT IS ALLOWED AND WELCOME. Naming which repo it
+probably belongs to costs one lookup and saves him hunting for the right tab.
+What is not allowed is CHANGING it. Look, name it, stop.
+
+    5.9.2026. He sent a screenshot of a SPEAK / TRANSCRIBE / KEYS screen with
+    Gemini voices called Orus, Leda and Puck, and asked for four changes to
+    it. None of that exists in MA Reader. It was GOOGLE_TTS_STT, his gtt app.
+    Said so, named the repo, wrote his four requests down so they were not
+    lost in the wrong chat, and stopped.
+
+THE SECOND REASON, which matters as much as competence: TWO CHATS EDITING ONE
+REPO COLLIDE. It has already happened here. A push to main was rejected
+because another chat had shipped four commits underneath it, and the only
+reason nothing was lost is that the rejection was investigated instead of
+forced. Working on another project's repo from this chat invites exactly that,
+in a repo this chat is not watching.
 
 THIS CHAT IS: MA Reader Termux, the repo MA_READER_TERMUX_MACOS, a Flask server in
 Termux read in a browser at localhost. Anything about a Streamlit app, a
