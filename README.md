@@ -39,7 +39,8 @@ edge-tts, ffmpeg. The entire Speechify side is standard library.
 
 **Three controls on the player.** The two pauses sit together on the left,
 because they are the same idea at two scales. Play is in the middle. Speed is
-alone on the right. The right-hand stepper used to say WORDS and did not really
+on the right, and past it, at the end of the bar, a next-sentence button: one
+sentence on, still reading if it was reading. The right-hand stepper used to say WORDS and did not really
 work; it says SPEED now, and the sentence pause has come out of Settings onto
 the bar where it belongs.
 

@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.45
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.46
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.45%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.46%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -5743,10 +5743,10 @@ body:not(.inreader):not(.onhome) .voices{display:none}
 .yt-play svg{width:38px; height:38px; display:block}
 .yt-play:active{opacity:.55}
 /* previous/next: filled, a step softer than the play */
-.yt-skip{width:54px; height:54px; border:none; background:transparent;
+.yt-skip{width:46px; height:46px; border:none; background:transparent;
   color:var(--text); opacity:.85; display:flex; align-items:center;
   justify-content:center; padding:0}
-.yt-skip svg{width:30px; height:30px; display:block}
+.yt-skip svg{width:25px; height:25px; display:block}
 .yt-skip:active{opacity:.5}
 /* outer controls (full screen, last): dimmer, flat, like shuffle/repeat */
 .yt-side{min-width:44px; height:50px; padding:0 6px; border:none;
@@ -5936,8 +5936,8 @@ body.mode-edit .reader-scroll .doc{outline:none; caret-color:var(--tune);
   -webkit-user-select:text; user-select:text; white-space:pre-wrap}
 body.mode-edit .sent, body.mode-edit .sent *{background:none !important;
   color:#fff !important; box-shadow:none !important}
-body.mode-edit .yt-play{opacity:.3; pointer-events:none}
-body.mode-text .yt-play{opacity:.3; pointer-events:none}
+body.mode-edit .yt-play, body.mode-edit .yt-skip{opacity:.3; pointer-events:none}
+body.mode-text .yt-play, body.mode-text .yt-skip{opacity:.3; pointer-events:none}
 .setlegend i{display:inline-block; width:12px; height:12px; border-radius:4px;
   margin-right:5px; vertical-align:-2px; border:2px solid; background:none}
 .spstate{font-size:12px; color:var(--faint); margin:8px 0 2px; line-height:1.5}
@@ -6158,6 +6158,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
           <button class="yt-num" data-reset="speed" title="Tap to reset to 1.00"><b id="spdNum">1.00</b><i>speed</i></button>
           <button class="yt-mini" data-step="speed" data-d="1" title="Faster">+</button>
         </div>
+        <button class="yt-skip" id="nextBtn" title="Next sentence">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 6A1.2 1.2 0 0 1 6.85 4.99L14.7 10.99A1.25 1.25 0 0 1 14.7 13.01L6.85 19.01A1.2 1.2 0 0 1 5 18Z"/><rect x="16.1" y="5" width="2.9" height="14" rx="1.45"/></svg>
+        </button>
       </div>
       <div class="status" id="status"></div>
     </div>
@@ -6202,6 +6205,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
           <button class="yt-num" data-reset="speed" title="Tap to reset to 1.00"><b id="spdNum2">1.00</b><i>speed</i></button>
           <button class="yt-mini" data-step="speed" data-d="1" title="Faster">+</button>
         </div>
+        <button class="yt-skip" id="offNextBtn" title="Next sentence">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 6A1.2 1.2 0 0 1 6.85 4.99L14.7 10.99A1.25 1.25 0 0 1 14.7 13.01L6.85 19.01A1.2 1.2 0 0 1 5 18Z"/><rect x="16.1" y="5" width="2.9" height="14" rx="1.45"/></svg>
+        </button>
       </div>
       <div class="status" id="offStatus"></div>
     </div>
@@ -6211,7 +6217,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.45 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.46 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6262,6 +6268,10 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
         quickening after a second. Tapping the number itself puts that control
         back where it started, 1.00 for speed and 0.00 for the word gap, so coming
         home from a long hold costs one tap.</p>
+      <p>Past the speed, at the right-hand end of the bar, is <b>next
+        sentence</b>. It steps one sentence on and carries on reading if it
+        was reading, or simply moves the highlight if it was not. The full
+        stop and the right arrow key do the same thing.</p>
       <p>The word gap is the quiet the voice already leaves inside a sentence,
         between one word and the next. Nothing is re-recorded and no word is
         ever cut: below zero the player runs quickly through that quiet, above
@@ -9182,6 +9192,7 @@ function bind(){
   }
 
   $("#playBtn").onclick = togglePlay;
+  { const b=$("#nextBtn"); if(b) b.onclick = ()=>next(); }
   /* the text is scrolled, not swiped */
   $("#loopBtn").onclick = ()=>{ ST.loop=!ST.loop; refreshToggles(); persist();
       toast("Loop "+(ST.loop?"on":"off")); };
@@ -10367,6 +10378,7 @@ function bindV2(){
   $("#offDelAll").onclick=offDeleteAll;
 
   $("#offPlay").onclick=offToggle;
+  { const b=$("#offNextBtn"); if(b) b.onclick = ()=>offNext(); }
   $("#saveOfflineBtn").onclick=makeOffline;
   const rt=$("#resumeTog"); if(rt) rt.onclick=()=>{ ST.resume=!ST.resume;
     refreshToggles(); persist(); };
