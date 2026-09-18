@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.46
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.47
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -1230,7 +1230,6 @@ def lib_text(tid):
 def lib_delete(tid):
     shutil.rmtree(os.path.join(LIB_DIR, tid), ignore_errors=True)
 
-
 # A STANDING KEY, not a voice. "sp_seat" means "whatever the language switch
 # and the two voice seats say right now", resolved on EVERY request rather
 # than fixed when it was chosen. It is what makes changing the engine or the
@@ -1325,7 +1324,16 @@ def align_tokens(sentence, bounds, total=None):
     each word's length, instead of dumping every word at t=0 (which used to make
     the highlight stick to the last word for the whole sentence)."""
     tokens = [(m.start(), m.end()) for m in _TOKEN_RE.finditer(sentence)]
-    out = [{"s": a, "e": b, "t": None, "d": None} for (a, b) in tokens]
+    # `w` IS NOT DECORATION. Layer 2 (Whisper) is handed this token list and
+    # nothing else, and it has to map what the recogniser heard onto what is
+    # on the screen. Without the word itself every entry normalises to the
+    # empty string, every comparison in wt_align scores the same, and
+    # Needleman-Wunsch degenerates into a straight diagonal — which is not
+    # "roughly right", it is off by one: measured here, eight visible words
+    # aligned to heard[1..8] instead of heard[0..7], so the highlight ran a
+    # whole word ahead for the entire sentence while reporting 80 ms accuracy.
+    out = [{"s": a, "e": b, "w": sentence[a:b], "t": None, "d": None}
+           for (a, b) in tokens]
     n = len(tokens)
     if not n:
         return []
@@ -1744,7 +1752,8 @@ def refine_tokens(mp3_path, tokens):
     for t in tokens:
         nt = a * float(t.get("t", 0.0)) + b
         nd = a * float(t.get("d", t.get("t", 0.0))) + b
-        ref.append({"s": t.get("s", 0), "e": t.get("e", 0), "t": nt, "d": nd})
+        ref.append({"s": t.get("s", 0), "e": t.get("e", 0),
+                    "w": t.get("w", ""), "t": nt, "d": nd})
 
     # 2) anchor warp: every audible onset is the true start of a word (or
     #    phrase). A global order-keeping match decides which word each onset
@@ -1804,6 +1813,26 @@ def refine_unit_json(mp3_path, json_path):
     # because a "pcm2" clip is fully timed and would otherwise never get one,
     # and deliberately not an engine bump, because nothing about the word times
     # has changed and re-measuring every cached clip would cost far more.
+    # A clip whisper-timed before the end-time fix carries `d` as a duration.
+    # It is recognisable without ambiguity — an end time is never smaller than
+    # its own start — and the repair is arithmetic, so it costs nothing and
+    # asks nobody. Done above the early return, because a whisper clip now
+    # returns there and would otherwise never be repaired.
+    if tok.get("engine") == "whisper":
+        fixed = False
+        for t in (tok.get("tokens") or []):
+            try:
+                if t.get("d") is not None and float(t["d"]) < float(t["t"]):
+                    t["d"] = round(float(t["t"]) + float(t["d"]), 3)
+                    fixed = True
+            except Exception:
+                pass
+        if fixed:
+            try:
+                json.dump(tok, open(json_path, "w", encoding="utf-8"),
+                          ensure_ascii=False)
+            except Exception:
+                pass
     if "sil" not in tok:
         tok["sil"] = measure_silence(mp3_path)
         try:
@@ -1817,7 +1846,20 @@ def refine_unit_json(mp3_path, json_path):
     # a cache hit never decodes audio twice.
     # A Speechify clip is already timed from its own speech marks. Never
     # re-measure it: the marks are truer than anything a decode can infer.
-    if tok.get("engine") in ("pcm2", "edge2", "speechify", "speechify-pcm"):
+    # "whisper" BELONGS IN THIS LIST AND WAS MISSING FROM IT.
+    #
+    # Layer 2 measures a clip at about 80 ms and stamps it "whisper". This
+    # function then met that stamp, did not recognise it, and ran the waveform
+    # refinement over it — which measures 329 ms, is the WORST of the three
+    # methods, and is documented twenty lines above as buying nothing. The
+    # clip came out stamped "pcm2", and because wt_apply had already written
+    # wt_tried it could never be re-timed. So the good timing was destroyed on
+    # the SECOND play of a sentence and never came back.
+    #
+    # Found in the cache, not in the code: 205 of the 459 clips that had ever
+    # been whisper-timed were sitting there stamped pcm2 with wt_tried set.
+    if tok.get("engine") in ("pcm2", "edge2", "whisper",
+                             "speechify", "speechify-pcm"):
         return
     tokens = tok.get("tokens") or []
     ref, dur, changed = refine_tokens(mp3_path, tokens)
@@ -2525,6 +2567,14 @@ def wt_apply(mp3_path, json_path, language=None):
     words = [t.get("w", "") for t in toks]
     if not words:
         return False
+    # A clip cached before tokens carried their words. Whisper would answer
+    # perfectly well and wt_align would hand back a diagonal, which is the
+    # off-by-one described in align_tokens. Refuse: the call costs money and
+    # the answer would be worse than the timing already on disk. Nothing is
+    # written, not even wt_tried, so the clip is re-timed properly the day it
+    # is next synthesised.
+    if not any(w.strip() for w in words):
+        return False
     heard = wt_fetch(mp3_path, language=language)
     d["wt_tried"] = True                    # never pay for the same clip twice
     if heard:
@@ -2532,7 +2582,19 @@ def wt_apply(mp3_path, json_path, language=None):
         if t and len(t) == len(toks) and wt_sane(heard, words, t, d.get("total")):
             for tok, (a, b) in zip(toks, t):
                 tok["t"] = round(float(a), 3)
-                tok["d"] = round(max(0.01, float(b) - float(a)), 3)
+                # `d` IS AN END TIME, NOT A DURATION. align_tokens writes an
+                # end time, refine_tokens writes an end time, and the page
+                # reads one: it releases the last word of a sentence when the
+                # playhead passes `d + 0.12`. This line used to write
+                # `b - a`, a duration, so on a whisper-timed clip the last
+                # word's release test was `playhead > 0.69` while the word
+                # itself started at 8.12 — true the instant it became
+                # current. The last word of every whisper-timed sentence
+                # never got the word highlight at all. Nothing failed, no
+                # call errored, and the other engines were fine, which is
+                # why it read as "the highlight is a bit weak at the end of
+                # sentences" for as long as it did.
+                tok["d"] = round(max(float(a) + 0.01, float(b)), 3)
             d["tokens"] = toks
             d["engine"] = "whisper"
     try:
@@ -4114,7 +4176,7 @@ def _sp_payload(accent, refresh=False):
 # reboot rather than once per lifetime:
 #
 #   Shizuku   an app that holds an ADB-started service and lends it out. Its
-#             osascript presses Cmd+Tab once Accessibility is granted. It
+#             `rish` shell runs anything at shell privilege. Best route: it
 #             survives Wi-Fi changes because the service is already running.
 #
 #   self-ADB  Termux's own adb connecting to the phone it is running on, over
@@ -4161,45 +4223,40 @@ def _mk_try(name, argv):
         return False, str(e)[:40]
 
 
-# ---------------------------------------------------------------------------
-# SWITCHING APPS, on a Mac
-#
-# On Android this needed Shizuku, a paired shell and a keycode. A Mac already
-# has the thing: Cmd+Tab goes to the app you were last in, which is exactly
-# what was wanted. osascript asks System Events to press it.
-#
-# THE ONE CATCH is Accessibility. macOS refuses synthetic keystrokes from an
-# app that has not been granted it, and answers -1719 or -1743 when it does.
-# That is a permission to be given once in System Settings, not an error to
-# be worked around, so it is reported as such.
-SW_SCRIPT = 'tell application "System Events" to keystroke tab using command down'
+APPSWITCH_KEY = "187"          # KEYCODE_APP_SWITCH, the recents square
 
 
 def sw_deps():
-    """What this Mac can offer, WITHOUT pressing anything.
+    """What this phone can offer, WITHOUT sending anything.
 
-    Asked before the first switch rather than after it fails, so the answer
-    names the cause instead of a button that quietly does nothing."""
-    have_osa = bool(shutil.which("osascript"))
-    if not have_osa:
-        return {"ready": False, "have": {"osascript": False}, "how": "",
-                "missing": ["osascript"],
-                "hint": "osascript is missing. That is unusual on a Mac."}
-    # a harmless System Events question. If Accessibility is refused it fails
-    # here, with the same error the real keystroke would give.
-    ok, why = _mk_try("probe", ["osascript", "-e",
-                                'tell application "System Events" to get name'])
-    if ok:
-        return {"ready": True, "have": {"osascript": True}, "how": "Cmd+Tab",
-                "missing": [], "hint": ""}
-    return {"ready": False, "have": {"osascript": True}, "how": "",
-            "missing": ["accessibility"],
-            "hint": "System Settings, Privacy and Security, Accessibility: "
-                    "allow your terminal. Then try again."}
+    Asked before the first switch rather than after it fails, so a refusal
+    names its cause instead of being a button that quietly does nothing."""
+    have = {"rish": bool(shutil.which("rish")),
+            "adb": bool(shutil.which("adb")),
+            "input": bool(shutil.which("input"))}
+    ready = have["rish"] or have["adb"] or have["input"]
+    how = ("Shizuku" if have["rish"] else
+           "ADB" if have["adb"] else
+           "the plain shell, which usually needs root" if have["input"] else "")
+    return {"ready": ready, "have": have, "how": how,
+            "missing": [k for k in ("rish", "adb") if not have[k]],
+            "hint": ("" if ready else
+                     "No adb and no rish. Turn on Wireless debugging, or run "
+                     "maread-adb once to pair this phone.")}
 
 
 def _sw_routes():
-    return [("cmd-tab", ["osascript", "-e", SW_SCRIPT])]
+    """Two taps of the recents key, sent close together.
+
+    Android has no "previous app" keycode. What it has is the recents square,
+    and tapping it TWICE lands on the app you were in before, which is what
+    the thumb gesture does. The pause matters: too fast and the system reads
+    one press, too slow and it leaves you looking at the recents screen."""
+    k = APPSWITCH_KEY
+    twice = "input keyevent %s; sleep 0.12; input keyevent %s" % (k, k)
+    return [("shizuku", ["rish", "-c", twice]),
+            ("adb",     ["adb", "shell", twice]),
+            ("shell",   ["sh", "-c", twice])]
 
 
 BROWSER_FILE = os.path.join(WEB_DIR, "browser.txt")
@@ -4897,7 +4954,7 @@ def _bg_wake_lock():
     # when running detached in the background, hold our own wake lock so the
     # server keeps serving after the foreground launcher releases its lock.
     try:
-        subprocess.Popen(["caffeinate", "-dimsu"],
+        subprocess.Popen(["termux-wake-lock"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
@@ -4939,7 +4996,14 @@ def _write_port(p):
 def _open_page():
     """Open the reader in whatever browser this machine has."""
     url = "http://localhost:%d" % PORT
-    for cmd in ("open", "xdg-open"):
+    if shutil.which("termux-open-url"):     # Chrome first, whatever the default browser (13.9.2026)
+        try:
+            subprocess.Popen(["termux-open-url", url, "com.android.chrome"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except Exception:
+            pass
+    for cmd in ("termux-open-url", "xdg-open", "open"):
         if shutil.which(cmd):
             try:
                 subprocess.Popen([cmd, url],
@@ -6023,19 +6087,15 @@ body.fullread .floatf:active{opacity:1}
 body.fullread .floatf .fdot{width:8px; height:8px}
 body.sheetopen .floatf{display:none !important}
 
-/* The app switcher. Same size and drag as the other two. */
+/* Play and pause. Same size and drag as the other two. */
 .floats{position:fixed; z-index:80; width:56px; height:56px; border-radius:50%;
   border:1px solid var(--line); background:var(--panel); color:var(--text);
   padding:0; display:none; align-items:center; justify-content:center;
   touch-action:none; box-shadow:0 3px 14px rgba(0,0,0,.45); opacity:.88}
-.floats .sarr{font-size:22px; line-height:1; display:block}
+.floats svg{width:23px; height:23px; display:block}
 body.hasfloats .floats{display:flex}
 .floats:active{border-color:var(--tune); opacity:1}
 .floats.moving{opacity:1; border-color:var(--tune); transform:scale(1.06)}
-/* dimmed until the phone can actually do it, so it never looks ready and
-   then does nothing */
-.floats.notready{opacity:.4}
-.floats.notready .sarr{opacity:.6}
 body.fullread .floats{opacity:.72; background:rgba(127,127,127,.16);
   border-color:transparent}
 body.fullread .floats:active{opacity:1}
@@ -6275,13 +6335,14 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
         you export: <code>MA Reader Audio</code> inside your Downloads. On
         Android that is <code>Downloads/MA Reader Audio</code>; on a Mac it is
         <code>~/Downloads/MA Reader Audio</code>. On Android, run
-        Exports land in your Downloads folder.</p>
+        <code>termux-setup-storage</code> once so the app can reach Downloads.</p>
 
       <h3>Fastest way to read something</h3>
       <p>Copy any text, come back to this page and tap <b>Paste</b>. The
         clipboard replaces whatever was here and starts reading immediately.
-        Tap any sentence to read from there. That is the only gesture on the
-        text; otherwise you simply scroll it with a finger.</p>
+        Tap the text to step on to the next sentence. That is the only gesture
+        on the text; otherwise you simply scroll it with a finger, and a finger
+        that moved was scrolling, so scrolling never skips anything.</p>
 
       <h3>The player</h3>
       <p>Either side of the play button is a small control with a minus, a
@@ -6294,7 +6355,8 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <p>Past the speed, at the right-hand end of the bar, is <b>next
         sentence</b>. It steps one sentence on and carries on reading if it
         was reading, or simply moves the highlight if it was not. The full
-        stop and the right arrow key do the same thing.</p>
+        stop, the right arrow key and a tap on the text all do the same
+        thing.</p>
       <p>The word gap is the quiet the voice already leaves inside a sentence,
         between one word and the next. Nothing is re-recorded and no word is
         ever cut: below zero the player runs quickly through that quiet, above
@@ -6306,17 +6368,25 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
         the next sentence starts that much before this one has finished, so
         there is no seam at all between them.</p>
 
-      <h3>Swiping</h3>
-      <p>Scroll the text with a finger, the way you would any page. Tapping a
-        sentence starts reading from it. That is the only gesture on the
-        text.</p>
+      <h3>Tapping and scrolling</h3>
+      <p>Scroll the text with a finger, the way you would any page. A tap on it
+        &mdash; anywhere on it, on a word or in the margin beside it &mdash;
+        steps on to the <b>next sentence</b>, and carries on reading if it was
+        reading. That is the only gesture on the text, and it means the same
+        thing everywhere, so there is nowhere you have to be careful where you
+        touch.</p>
+      <p>A finger that moved was scrolling and nothing happens when you lift
+        it. Play and pause are not on the text at all: they are on the floating
+        button, which is also the only control that stays with you while you
+        are immersive.</p>
 
       <h3>Immersive reading</h3>
       <p>Double tap the middle of the page and everything except the text goes
         away, like an ebook, and it starts speaking. Double tap the middle again
         and the controls come back and it pauses, so you always stop exactly
-        where you were reading. While immersive, a single tap anywhere pauses
-        and resumes.</p>
+        where you were reading. While immersive, a single tap anywhere steps on
+        to the next sentence, exactly as it does outside; the floating button is
+        how you pause without leaving.</p>
 
       <h3>Why it does not stutter between sentences</h3>
       <p>Each sentence is its own small clip, so there is a join between every
@@ -6368,7 +6438,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
          button; a row that already holds switches is where a switch belongs. -->
     <button class="chip" id="flP">Floating paste</button>
     <button class="chip" id="flF">Floating full screen</button>
-    <button class="chip" id="flS">Floating switcher</button>
+    <button class="chip" id="flS">Floating play/pause</button>
   </div>
   <!-- Three panes, not two engines. A person looking for the font should
        not have to guess whether it lives under Edge or under Speechify. -->
@@ -6498,9 +6568,9 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
       <button class="chip" id="focusTog">Focus mode</button>
       <button class="chip" id="loopBtn">Loop</button>
       <button class="chip" id="adbTog">ADB mode on start</button>
-      <button class="chip" id="swTest">Test the switcher</button>
     </div>
     <div class="langhint"><b>Floating paste button.</b> Drag it anywhere. Press: paste, full screen, read. In full screen it is the way out.</div>
+    <div class="langhint"><b>Floating play/pause.</b> Drag it anywhere. It is the only transport control that survives immersive, and since a tap on the text now means next sentence, it is where pause lives. It used to switch Android apps; that job is gone.</div>
 
   </div>
 
@@ -6592,13 +6662,13 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
 <button class="floatf" id="floatF" title="Full screen on and off. Drag to move.">
   <span class="fdot"></span>
 </button>
-<!-- The third floater: back to whatever app you were in before this one, and
-     back again. The same thing as double-tapping the recents square. It needs
-     the privileged shell that maread-adb sets up, because a web page cannot
-     switch Android apps on its own. -->
-<button class="floats" id="floatS" title="Switch to the last app. Drag to move.">
-  <span class="sarr">&#8646;</span>
-</button>
+<!-- The third floater: play and pause. It used to switch Android apps, which
+     needed a privileged shell and was wanted about once an hour. Pause is
+     wanted every minute, and a tap on the text now means "next sentence", so
+     pause had nowhere else to live. It is also the only transport control
+     that survives immersive, which makes it the one way to stop the reading
+     without first leaving the view you are reading in. -->
+<button class="floats" id="floatS" title="Play and pause. Drag to move."></button>
 
 <div class="catchwrap" id="catchWrap">
   <div class="catchbox">
@@ -6733,7 +6803,8 @@ const ST = {
   spSet: 0, spPerSet: 4, bothEngines: false,
   floatPaste: true, fpX: 0.82, fpY: 0.72,
   floatFull: true, ffX: 0.82, ffY: 0.58,
-  floatSwap: true, fsX: 0.82, fsY: 0.44, adbMode: true, browser: "chrome",
+  floatSwap: true, swapIsPlay: false, fsX: 0.82, fsY: 0.44,
+  adbMode: true, browser: "chrome",
   /* null means never chosen, so the first four can be offered. An empty
      ARRAY means chosen to be none, and must be left alone. Treating those
      two as the same value is what made unticked voices come back on every
@@ -7133,8 +7204,6 @@ function applyEngineCards(){
 }
 /* Changing the language must leave a usable voice behind. If the one in hand
    cannot speak the new language, the first that can is taken. */
-
-
 /* ---------- a setting that changes the SOUND takes effect at once ----------
    Settings used to be a place you visited and left. Change the language while
    a Croatian page was being read in English and nothing happened: the clips
@@ -7145,10 +7214,6 @@ function applyEngineCards(){
    from its own beginning in the new voice, so the change is audible on the
    line being read rather than the one after next. */
 function soundChanged(why){
-  /* The three players hold decoded audio from the old voice. Emptying their
-     src is what makes the next play fetch rather than replay. */
-  try{ players.forEach(p=>{ try{ p.pause(); }catch(e){} p.removeAttribute("src");
-                            try{ p.load(); }catch(e){} }); }catch(e){}
   boundsCache.clear(); silCache.clear();
   try{ wordCache.clear(); }catch(e){}
   try{ clearWarm(); }catch(e){}
@@ -7237,7 +7302,7 @@ function renderFloatTogs(){
 function wireFloatTogs(){
   const rows = [["#flP","floatPaste",placeFloat,"paste button"],
                 ["#flF","floatFull",placeFloatF,"full screen button"],
-                ["#flS","floatSwap",placeFloatS,"app switcher"]];
+                ["#flS","floatSwap",placeFloatS,"play/pause button"]];
   rows.forEach(([sel,key,place,label])=>{
     const b = $(sel); if(!b) return;
     b.onclick = ()=>{
@@ -8174,16 +8239,11 @@ function renderDoc(){
     const span = document.createElement("span");
     span.className = "sent"; span.dataset.i = i;
     span.textContent = s + " ";
-    /* Clicking a sentence reads from that sentence. Clicking the one already
-       playing pauses and resumes it, so the old tap-to-pause gesture still
-       works where the eye already is. A drag is a sentence step, not a click,
-       so it is filtered out first. */
-    /* THE ONLY GESTURE ON THE TEXT. Scroll it with a finger, tap a sentence
-       to read from there. Nothing else: no swipe between sentences, no tap to
-       paste, no tap to pause. Every one of those fired by accident while a
-       finger was only trying to scroll, and someone who is listening should
-       not have to be careful where he touches. */
-    span.onclick = ()=>{ jumpTo(i, true); };
+    /* No handler of its own any more. THE GESTURE ON THE TEXT IS ONE THING
+       and it belongs to the whole reading area, not to a sentence: see
+       wireCenterTaps. A span that also answered taps would mean the same
+       finger got a different answer depending on whether it landed on a word
+       or in the margin beside it. */
     doc.appendChild(span);
   });
   // start synthesising the opening sentences straight away
@@ -8615,7 +8675,7 @@ function next(){ jumpTo(ST.idx+1, ST.playing); }
 const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L8.53 4.65A1 1 0 0 0 7 5.5z"/></svg>';
 const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.4" y="4.8" width="3.9" height="14.4" rx="1.95"/><rect x="13.7" y="4.8" width="3.9" height="14.4" rx="1.95"/></svg>';
 function setPlayIcon(on){ $("#playBtn").innerHTML = on ? ICON_PAUSE : ICON_PLAY;
-  audioState(on); }
+  audioState(on); syncFloatPlay(); }
 
 /* ---------- what the rest of the phone sees ----------
    Both readers funnel through setPlayIcon and offSetPlayIcon, so this is the
@@ -8854,13 +8914,14 @@ function showHome(){ hideAllViews(); $("#homeView").classList.remove("hidden");
   document.body.classList.add("onhome"); setTab("home"); loadLibrary(); }
 function showReader(){ hideAllViews(); $("#readerView").classList.remove("hidden");
   document.body.classList.remove("onhome");
-  document.body.classList.add("inreader"); setTab("home"); }
+  document.body.classList.add("inreader"); setTab("home"); syncFloatPlay(); }
 function showOfflineList(){ hideAllViews();
   $("#offlineView").classList.remove("hidden");
   document.body.classList.remove("inreader","onhome"); setTab("offline"); loadOffline(); }
 function showOfflineReader(){ hideAllViews();
   $("#offlineReaderView").classList.remove("hidden");
-  document.body.classList.remove("onhome","inreader"); setTab("offline"); }
+  document.body.classList.remove("onhome","inreader"); setTab("offline");
+  syncFloatPlay(); }
 function showHelp(){ hideAllViews(); $("#helpView").classList.remove("hidden");
   document.body.classList.remove("inreader","onhome"); setTab("help"); }
 function goTab(name){
@@ -9114,7 +9175,8 @@ function stateBody(){
         voiceBar:!!ST.voiceBar,
         floatPaste:!!ST.floatPaste, fpX:ST.fpX, fpY:ST.fpY,
         floatFull:!!ST.floatFull, ffX:ST.ffX, ffY:ST.ffY,
-        floatSwap:!!ST.floatSwap, fsX:ST.fsX, fsY:ST.fsY,
+        floatSwap:!!ST.floatSwap, swapIsPlay:!!ST.swapIsPlay,
+        fsX:ST.fsX, fsY:ST.fsY,
         adbMode:!!ST.adbMode,
         enabledLangs:ST.enabledLangs});
 }
@@ -9344,15 +9406,6 @@ function bind(){
          app is closed rather than a quarter second later. */
       toast(ST.adbMode ? "ADB comes up on the next start"
                        : "ADB will be left alone on the next start");
-    };
-  }
-  { const b=$("#swTest");
-    if(b) b.onclick = ()=>{
-      api("/api/appswitch/status").then(r=>r.json()).then(d=>{
-        toast(d.ready ? ("Ready, via " + d.how)
-                      : (d.hint || "Not available on this phone."));
-        const el=$("#floatS"); if(el) el.classList.toggle("notready", !d.ready);
-      }).catch(()=> toast("Could not reach the server."));
     };
   }
   { const c=$("#catchGo"), x=$("#catchCancel"), b=$("#catchBox");
@@ -9662,48 +9715,60 @@ function toggleImmersive(isOffline){
   }
 }
 function toggleFullread(){ toggleImmersive(false); }
-/* One tap router for the reading area. A tap in the centre is held back for a
-   quarter of a second in case a second one follows, so the double tap never
-   also jumps to whatever sentence happened to be under the finger. Taps
-   outside the centre keep their normal behaviour and are not delayed at all,
-   unless we are immersive, where the whole page is a play/pause button. */
+/* ---------- THE ONE GESTURE ON THE TEXT ----------
+   A tap steps one sentence on. Anywhere on the reading area, immersive or
+   not, on a word or in the margin beside it, in either reader.
+
+   It used to mean three different things at once - jump to THIS sentence out
+   at the edges, play/pause on the sentence already speaking, play/pause
+   everywhere once immersive - and you could not perform it without first
+   working out which of the three you were about to get. One text, one tap,
+   one meaning. Play and pause moved out to the floating button, which is the
+   only control that survives immersive and so is reachable from wherever the
+   tap is now busy.
+
+   Two things still have to be told apart from it.
+
+   A DOUBLE tap in the middle still opens and closes immersive, so a tap that
+   lands in the centre is held back a quarter of a second in case a second one
+   follows; it must not also skip a sentence on the way in. A tap anywhere
+   else fires at once, because nothing is waiting on it.
+
+   And a finger that MOVED was scrolling, not tapping. That guard is the whole
+   reason a tap is allowed to mean something everywhere: without it, every
+   flick of a long text would skip a sentence, which is the accident the old
+   code went out of its way to avoid by claiming as little of the screen as it
+   could. Claim the screen, then be strict about what counts as a tap. */
+const TAP_SLOP = 12;          /* px a finger may drift and still be a tap */
+const TAP_WAIT = 260;         /* ms a centre tap waits for its twin */
 function wireCenterTaps(scrollSel, isOffline){
   const sc=$(scrollSel); if(!sc) return;
-  let tapT=null;
+  let tapT=null, downX=0, downY=0, moved=false;
+  sc.addEventListener("pointerdown", (e)=>{
+    downX=e.clientX; downY=e.clientY; moved=false;
+  }, true);
+  sc.addEventListener("pointermove", (e)=>{
+    if(moved) return;
+    if(Math.abs(e.clientX-downX) > TAP_SLOP ||
+       Math.abs(e.clientY-downY) > TAP_SLOP) moved=true;
+  }, true);
   sc.addEventListener("click", (e)=>{
-    /* One finger, straight to the next article. A tap on the text asks for
-       the clipboard, Android offers its Paste button, and what comes back
-       replaces everything and starts speaking. Nothing else may claim a tap
-       while this is on, or the gesture would mean three things at once. */
-    const full = isFullread();
-    const inZ  = inCenterZone(e.clientX, e.clientY);
-    if(!full && !inZ) return;       /* ordinary tap: let the sentence handle it */
+    const step = ()=>{ if(isOffline){ offNext(); } else { next(); } };
+    /* Editing the source is typing, not reading, and a thing that is itself a
+       control answers for itself. Neither is our gesture. */
+    if(document.body.classList.contains("mode-edit")) return;
+    if(e.target && e.target.closest &&
+       e.target.closest("textarea, input, select, button, a")) return;
+    if(moved){ moved=false; return; }      /* that was a scroll */
+
     e.stopPropagation(); e.preventDefault();
-    if(tapT){                       /* second tap inside the window */
+    const inZ = inCenterZone(e.clientX, e.clientY);
+    if(tapT){                              /* second tap inside the window */
       clearTimeout(tapT); tapT=null;
       if(inZ){ toggleImmersive(isOffline); return; }
     }
-    /* In a Markdown text there is no .sent to close on, so the sentence is
-       found from the word span that was actually touched. */
-    let si = -1;
-    if(!isOffline && MD.mapped){
-      const wsp = (e.target && e.target.closest)
-                    ? e.target.closest("#doc .w, #doc .g") : null;
-      if(wsp) si = mdSentenceAt(wsp);
-    }else{
-      const sent = (e.target && e.target.closest) ? e.target.closest(".sent") : null;
-      si = sent ? parseInt(sent.dataset.i, 10) : -1;
-    }
-    tapT=setTimeout(()=>{
-      tapT=null;
-      if(full || si < 0 || isNaN(si)){
-        if(isOffline){ offToggle(); } else { togglePlay(); }
-        return;
-      }
-      if(isOffline){ offJump(si, OFF.playing); }
-      else if(si === ST.idx){ togglePlay(); }
-      else { jumpTo(si, true); }
-    }, 260);
+    if(!inZ){ step(); return; }            /* nothing waits on an edge tap */
+    tapT=setTimeout(()=>{ tapT=null; step(); }, TAP_WAIT);
   }, true);
 }
 /* ---------- clipboard paste ---------- */
@@ -9853,26 +9918,32 @@ function placeFloatS(){
   const [x,y]=clampFloatEl(el, fx*window.innerWidth, fy*window.innerHeight);
   el.style.left=x+"px"; el.style.top=y+"px";
 }
-/* Back to the app you were in before this one. A web page cannot do this; the
-   server asks the privileged shell that maread-adb sets up, exactly as the
-   media keys already do. Without that shell it says so rather than doing
-   nothing quietly. */
-function floatSwapPress(){
-  api("/api/appswitch", {method:"POST"}).then(r=>r.json()).then(d=>{
-    if(!d.ok) toast(d.error || "No privileged shell. Run maread-adb in Termux.");
-  }).catch(()=> toast("Could not reach the server."));
+/* Which of the two readers is on screen. There is one floating button and
+   there are two players behind it, so every press and every icon has to ask
+   this first. */
+function floatOnOffline(){
+  const v=$("#offlineReaderView");
+  return !!(v && !v.classList.contains("hidden"));
+}
+/* Play and pause, for whichever reader is showing. */
+function floatPlayPress(){
+  if(floatOnOffline()) offToggle(); else togglePlay();
+}
+/* The button wears the state it will put you in, the same way the one on the
+   player bar does: a triangle while it is silent, two bars while it speaks.
+   Both readers funnel their icon through here, so the floater and the bar can
+   never disagree about whether sound is coming out. */
+function syncFloatPlay(){
+  const el=$("#floatS"); if(!el) return;
+  const on = floatOnOffline() ? !!OFF.playing : !!ST.playing;
+  el.innerHTML = on ? ICON_PAUSE : ICON_PLAY;
+  el.title = (on ? "Pause" : "Play") + ". Drag to move.";
 }
 function wireFloatS(){
   const el=$("#floatS"); if(!el) return;
   placeFloatS();
-  wireDrag(el, floatSwapPress, (x,y)=>{ ST.fsX=x; ST.fsY=y; });
-  /* Ask ONCE at boot what this phone can do, so the button can say it is not
-     ready before it is pressed rather than after. */
-  api("/api/appswitch/status").then(r=>r.json()).then(d=>{
-    el.classList.toggle("notready", !d.ready);
-    el.title = d.ready ? ("Switch to the last app, via " + d.how + ". Drag to move.")
-                       : (d.hint || "Not available on this phone.");
-  }).catch(()=>{});
+  wireDrag(el, floatPlayPress, (x,y)=>{ ST.fsX=x; ST.fsY=y; });
+  syncFloatPlay();
 }
 function clampFloat(x, y){
   const el=$("#floatP"); const s=(el&&el.offsetWidth)||56;
@@ -10275,7 +10346,7 @@ function offUpdateCounter(){
     } }
 }
 function offSetPlayIcon(on){ $("#offPlay").innerHTML = on ? ICON_PAUSE : ICON_PLAY;
-  audioState(on); }
+  audioState(on); syncFloatPlay(); }
 function setOffStatus(s){ $("#offStatus").textContent=s||""; }
 
 /* Light up the whole sentence FIRST, then load and play its clip. */
@@ -10479,6 +10550,21 @@ function boot(){
     if(typeof st.ffX === "number") ST.ffX = st.ffX;
     if(typeof st.ffY === "number") ST.ffY = st.ffY;
     ST.floatSwap = (st.floatSwap !== false);
+    /* ONE-TIME MIGRATION. This floater used to switch Android apps: a job
+       that needed a privileged shell, so plenty of people met it as a dim
+       button that did nothing and switched it off. It is play and pause now,
+       and since a tap on the text means "next sentence" it is the only pause
+       there is once you are immersive. So it comes back on once, for anyone
+       who turned the OLD job off, and the flag then stops us ever overruling
+       the choice again - after this, off means off.
+
+       Nothing is saved from here: persist() is deaf until boot finishes. It
+       does not need to be. The flag rides out on the next save of anything,
+       and switching this button off is itself a save, so the one action that
+       would make a second migration wrong is the very action that prevents
+       it. */
+    if(!st.swapIsPlay){ ST.floatSwap = true; }
+    ST.swapIsPlay = true;
     ST.adbMode = (st.adbMode !== false);
     if(typeof st.fsX === "number") ST.fsX = st.fsX;
     if(typeof st.fsY === "number") ST.fsY = st.fsY;
