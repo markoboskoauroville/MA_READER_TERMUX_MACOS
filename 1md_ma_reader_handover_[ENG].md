@@ -955,6 +955,121 @@ is what body.notabs hides, so the way back is structurally guaranteed rather
 than merely remembered: gear, Settings, toggle. With the voice row also off,
 the whole header is one gear.
 
+## Pinch to change the letter size (v3.48)
+
+Two fingers anywhere in the reading area change the size of the type, live,
+while they move. One finger still scrolls. It works in the reader and in the
+offline player, and on a Mac trackpad the same pinch arrives as ctrl+wheel
+and is handled by the same code.
+
+**It is not the browser's zoom, and that is the whole point.** Zoom magnifies
+the page as a picture: the line breaks stay where they were and the right-hand
+edge of every line goes off the screen, so reading becomes a sideways drag once
+per line. This is the A- / A+ stepper from Settings run continuously — the type
+grows and the text REFLOWS into the same column, so nothing ever leaves the
+screen. Both write the same `size`, so the stepper and the pinch always agree,
+and the pinch is remembered like any other setting.
+
+Three things had to be true before it was a gesture rather than a trick.
+
+    the browser must be told FIRST     touch-action:pan-y on .reader-scroll
+    the text must stay under the       the line under the middle of the pinch
+      fingers                            is remembered, and the scroll is
+                                         corrected after every resize
+    it must not cost a sentence        a tap in the text skips forward, and
+                                         letting go can arrive as a click
+
+**touch-action is the only thing that works.** preventDefault on the first
+touchmove is too late: by then Chrome has decided the gesture is a scroll and
+every event after it arrives with `cancelable` already false. The declaration
+has to be in the stylesheet, before the first finger lands. `pan-y`, not
+`none`, so the ordinary one-finger scroll keeps its native feel; and `pan-x
+pan-y` on `.doc.md pre`, because pan-y on the ancestor would otherwise have
+taken the sideways scroll away from code blocks.
+
+**The anchor is what makes it usable.** Growing type from the top of the
+document pushes the line you were reading down and off the bottom, and the
+gesture turns into a hunt for your place. `elementFromPoint` at the middle of
+the pinch is remembered before anything moves, and after every resize the
+scroll is put back so that line has not shifted. A detached anchor reports a
+rectangle of zeroes, which would throw the scroll to the top, so that case is
+checked and anchoring simply stops.
+
+**The size is a real number now.** It was a whole step from 1 to 14 for as
+long as a stepper was the only thing that moved it. A+ and A- round before
+they move, so the buttons still land on whole steps.
+
+### The bug this found, which was worth more than the feature
+
+`load_state()` in server.py ended its sanitising pass with
+
+    st["volume"] = int(st["volume"]); st["size"] = int(st["size"])
+
+so a pinched size of 7.35 worked perfectly on the screen, was accepted by the
+server with a 200, and came back 7 on the next page load. The browser is told
+the write succeeded and the value is quietly different — `silent-failure.md`
+exactly. `_num("size", 1, 14, 2, 0)` above it was doing the same thing a
+second time, rounding to zero decimals.
+
+Measured, before against after, on the real clamp lifted out of the real
+installer:
+
+    sent    v3.47   v3.48
+    7.35      7      7.35
+    7.9       8      7.9
+    4.5       4      4.5
+    13.8     14      13.8
+
+`volume` is still an int, because a whole percentage is right for volume.
+
+### And the same trap on the browser's side
+
+A size that is not a number at all — a corrupted state file, an older build,
+somebody with the console open — used to arrive exactly as it was found, and
+a string turns `--read` into `"NaNpx"`, **which a browser discards without
+saying so**. The text then sits at the stylesheet's 21px, the readout says
+NaN, and the letter size cannot be moved by the stepper or by a pinch, because
+every sum that starts at NaN ends at NaN. Nothing anywhere reports a fault.
+`sizeOf()` now stands in front of every route into `ST.size`.
+
+### What was tested, and what was not
+
+64 checks on the gesture itself, lifted verbatim out of the shipped page and
+driven with synthetic touches; 15 on the server's clamp, lifted out of the
+shipped installer; the whole page parsed as JavaScript and its stylesheet
+brace-counted, because a syntax error there is a blank app rather than a
+broken pinch; and both servers run for real, on spare ports, with the page
+fetched over HTTP and compared byte for byte against the source.
+
+The suite was then checked against itself: fourteen deliberate breaks planted
+in the code one at a time, and all fourteen turned it red. Four of them did
+not, at first, and the tests that let them through were weak — a slow-versus-
+fast comparison where both ends sat at the ceiling and agreed for the wrong
+reason, an assertion that could not fail, a third-finger case where the first
+two fingers did not move, and an anchor checked by calling the helper instead
+of by pinching.
+
+**NOT tested: a real finger on a real screen.** There is no browser on this
+phone to drive. The arithmetic, the event flow and the served bytes are
+proven; how it feels under the hand is Baba's to see first, like the rest of
+the browser side.
+
+### Where those tests live, and why they are not in this repository
+
+In `GOOGLE_TTS_STT/tests`, and they take this installer's path as an argument:
+
+    node tests/test_page.js       .../3sh_i_ma_reader_v3_termux.sh
+    node tests/test_pinch.js      .../3sh_i_ma_reader_v3_termux.sh
+    python3 tests/pinch_mutants.py .../3sh_i_ma_reader_v3_termux.sh
+    python3 tests/test_state_size.py .../3sh_i_ma_reader_v3_termux.sh
+
+`tests/pinch_extract.py` lifts the page out of the heredoc, so the same suite
+reads all three copies of the page and none of them has a test of its own to
+drift from. A second copy of these tests kept here would be the very thing
+the change was written to avoid. The patch that made the change is
+`GOOGLE_TTS_STT/tools/apply_pinch.py`; it is idempotent and `--check` says
+whether a file still carries it.
+
 ## Where the settings live
 
 One file, ~/.maread-web/web_state.json, in Termux private storage. Nothing
@@ -1279,6 +1394,12 @@ piece is missing it offers [D] fetch it, [C] carry on anyway, [Q] back.
     serve the HTML with Cache-Control: no-store or the browser shows yesterday
     a shell colour escape in single quotes prints as text, use $'...'
     the clipboard can hang forever, see above
+    int() at the end of a sanitising pass truncates every fractional setting
+      the browser sends, answers 200, and is only visible one page load later
+    a CSS variable set to "NaNpx" is discarded silently and the stylesheet's
+      own value is used, so a bad number looks like a working default
+    touch-action must be in the stylesheet, not asked for in the first
+      touchmove: by then the events are already uncancelable
 
 ## Conventions
 
@@ -1298,6 +1419,8 @@ piece is missing it offers [D] fetch it, [C] carry on anyway, [Q] back.
     the browser side of full screen, the floating button and the paste catcher
       are checked by code inspection and simulation only. They live in Chrome,
       not in a sandbox, so Baba is the first to actually see them
+    the pinch is proven by arithmetic, by simulated touches and by the bytes
+      that reach the browser, but no real finger has been on it
     US voice pages 20 and 21 are not two women and two men, because there are
       45 women and 37 men and the tail runs out
     MA_READER_SPEECHIFY (private) also holds a v34 line. Diffed 17.8.2026 and

@@ -37,6 +37,15 @@ edge-tts, ffmpeg. The entire Speechify side is standard library.
 
 ## v3
 
+**Pinch the text to resize it.** Two fingers anywhere in the reading area
+change the letter size while they move, live, and one finger still scrolls.
+The line under the middle of the pinch stays exactly where it is, so you
+resize around the sentence you are looking at instead of losing your place.
+It is not the browser's zoom: the text reflows into the same column, so no
+line ever runs off the right-hand edge. On a Mac, a trackpad pinch does the
+same. It is the A- / A+ stepper from Settings run continuously, and the two
+always agree.
+
 **Three controls on the player.** The two pauses sit together on the left,
 because they are the same idea at two scales. Play is in the middle. Speed is
 on the right, and past it, at the end of the bar, a next-sentence button: one
