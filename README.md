@@ -145,8 +145,10 @@ documentation, and each trap that cost a bug is recorded beside the fact.
 
 ## macOS
 
-    curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main/3sh_i_ma_reader_v3_macos.sh
-    bash 3sh_i_ma_reader_v3_macos.sh
+```sh
+curl -fsSL -O https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main/3sh_i_ma_reader_v3_macos.sh
+bash 3sh_i_ma_reader_v3_macos.sh
+```
 
 Then `maread` to run it, `maread-update` to update, `maread-adb` if app
 switching needs its permission.
