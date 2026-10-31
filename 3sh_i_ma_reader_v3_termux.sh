@@ -3559,6 +3559,16 @@ _down = {}                     # engine -> unix time it is trusted again
 _heal_lock = threading.Lock()
 _heal_next = 0.0               # in-memory gate for the daily look
 
+ENGINE_LOG = os.path.join(HOME, ".maread-web", "engines.log")
+
+def engine_log(msg):
+    """Every stand-in, with the reason, so a switch can be explained after."""
+    try:
+        with open(ENGINE_LOG, "a", encoding="utf-8") as f:
+            f.write("%s %s\n" % (time.strftime("%d.%m %H:%M:%S"), msg[:400]))
+    except Exception:
+        pass
+
 def engine_down(eng):
     return _down.get(eng, 0) > time.time()
 
@@ -3704,7 +3714,16 @@ def synth_as(eng, sent, vkey, mp3, js):
             voice = VOICE_BY_VKEY[vkey][0]
         else:
             voice = VOICE_BY_VKEY["hrF" if lang == "hr" else "ukF"][0]
-        return synth_unit(sent, voice, mp3, js), True
+        err = synth_unit(sent, voice, mp3, js)
+        if err and "403" not in err:
+            # One blip on the line is not an outage. 31.10.2026 a single
+            # dropped connection sent the next three Croatian sentences to
+            # Google for two minutes; asking once more keeps Edge reading.
+            time.sleep(0.5)
+            err = synth_unit(sent, voice, mp3, js)
+            if not err:
+                _down.pop("edge", None)
+        return err, True
     if eng == "speechify":
         try:
             if not sp_live_keys():
@@ -3804,6 +3823,8 @@ def ensure_unit(tid, vkey, idx):
             err, applies = synth_as(eng, sent, vkey, om, oj)
             if not err:
                 if eng != primary:
+                    engine_log("sentence: %s for %s (%s)" % (
+                        eng, primary, "; ".join(errs) or primary + " was down"))
                     try:
                         d = json.load(open(oj, encoding="utf-8"))
                         d["fb"] = eng
@@ -5003,6 +5024,10 @@ def api_say():
             vkey = SP_SEAT_VKEY if eng == "speechify" else ("hrF" if lang == "hr" else "ukF")
             err, applies = synth_as(eng, text, vkey, mp3, js)
             if not err:
+                if eng != SAY_ORDER[lang][0]:
+                    engine_log("say: %s for %s (%s)" % (
+                        eng, SAY_ORDER[lang][0],
+                        "; ".join(errs) or SAY_ORDER[lang][0] + " was down"))
                 audio = open(mp3, "rb").read()
                 resp = app.response_class(audio, mimetype="audio/mpeg")
                 resp.headers["X-Engine"] = eng
