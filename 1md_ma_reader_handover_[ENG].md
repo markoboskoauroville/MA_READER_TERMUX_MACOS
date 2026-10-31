@@ -1,6 +1,6 @@
 # MA Reader Termux, Handover
 
-State of the app as of 18.8.2026, v3.14, everything in it verified. This file is rewritten on
+State of the app as of 31.10.2026, v3.49, everything in it verified. This file is rewritten on
 every push. If it disagrees with the code, the code is right and this file is
 a bug.
 
@@ -92,6 +92,33 @@ Settings opens on two buttons and the cards below follow whichever is chosen.
 Both appear on the top row together whenever each has voices to show:
 Speechify first, Edge below, each scrolling on its own. Tapping a voice from
 either row moves the engine to match it.
+
+### No engine failure is silent (v3.49)
+
+31.10.2026 the app read nothing: Microsoft changed the Sec-MS-GEC token
+check and edge-tts 7.2.8 got a 403 on every sentence. 7.3.1 fixed it. Since
+then two things stand between a change on someone else's server and silence:
+
+    HEAL       a refused Edge handshake runs pip install --upgrade edge-tts in
+               a thread and drops edge_tts from sys.modules, so the next
+               sentence uses the new code without a restart. Also once a day.
+               The last attempt is in ~/.maread-web/edge_heal.json.
+    FALL BACK  ensure_unit walks a chain: Edge -> Google -> Speechify,
+               Speechify -> Edge -> Google. Free before paid. An engine that
+               failed goes to the BACK for 120 s, never out, so when
+               everything fails everything is still tried.
+
+A stand-in clip is written to audio/<vkey>__fb-<engine>/, never to the voice's
+own folder, and served no-store, so the immutable cache never holds the wrong
+voice and the real one returns by itself. Its timing json carries fb and
+fbFrom; the page says once "Edge is not answering, reading with Google" and
+once "The chosen voice is back". A stand-in younger than 60 s answers the
+second of the two requests (audio, bounds) so sound and times always match.
+
+Speechify only stands in for an Edge voice in the language its switch is on;
+otherwise it would read Croatian text in English.
+
+    GET /api/engines    edge-tts version, engines down, last self-repair
 
 ### The reading language
 

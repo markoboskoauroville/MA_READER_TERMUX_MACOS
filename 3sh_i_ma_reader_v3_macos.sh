@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.48
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.49
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.48%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.49%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -1914,6 +1914,7 @@ def synth_unit(text, voice, mp3_path, json_path):
             os.remove(mp3_path + ".part")
         except Exception:
             pass
+        edge_refused(e)
         return "TTS failed: %s" % e
     finally:
         loop.close()
@@ -3543,6 +3544,212 @@ def synth_unit_speechify(text, voice_id, mp3_path, json_path):
     return ""
 
 
+# ---------- the engines heal themselves, and one of them always speaks ----------
+# 31.10.2026. Microsoft changed how its read-aloud service checks the
+# Sec-MS-GEC token. edge-tts 7.2.8, installed in September and never touched
+# again, kept sending the old one, and every sentence came back 403. Nothing
+# in the app had changed; the service had, and the app was silent.
+#
+# Two answers, so a change on someone else's server can never again end in
+# silence here:
+#
+#   HEAL      A refused handshake upgrades edge-tts in the background and
+#             reloads it. Once a day the server looks for a newer one anyway,
+#             so the next change is usually met before it is ever noticed.
+#   FALL BACK While an engine fails, the sentence goes to the next one:
+#             Edge -> Google -> Speechify, Speechify -> Edge -> Google.
+#             Free before paid. The stand-in clip lives in its own folder,
+#             never in the voice's own, and is served uncached, so the real
+#             voice returns by itself the moment its engine is back.
+import sys, importlib
+
+ENGINE_DOWN_FOR = 120          # seconds a failing engine goes to the back
+FALLBACK_ORDER = {"edge": ["google", "speechify"],
+                  "speechify": ["edge", "google"]}
+HEAL_FILE = os.path.join(HOME, ".maread-web", "edge_heal.json")
+_down = {}                     # engine -> unix time it is trusted again
+_heal_lock = threading.Lock()
+_heal_next = 0.0               # in-memory gate for the daily look
+
+def engine_down(eng):
+    return _down.get(eng, 0) > time.time()
+
+def edge_version():
+    try:
+        from importlib.metadata import version
+        return version("edge-tts")
+    except Exception:
+        return "?"
+
+def edge_heal(reason, min_gap):
+    """pip install --upgrade edge-tts in a thread, at most once per min_gap
+    seconds across restarts. The modules are dropped from sys.modules so the
+    next `import edge_tts` in synth_unit loads the new code without a
+    restart. A clip being streamed at that moment keeps the old module."""
+    global _heal_next
+    now = time.time()
+    if now < _heal_next and min_gap >= 86400:
+        return
+    def run():
+        global _heal_next
+        if not _heal_lock.acquire(blocking=False):
+            return
+        try:
+            try:
+                last = json.load(open(HEAL_FILE, encoding="utf-8")).get("at", 0)
+            except Exception:
+                last = 0
+            if time.time() - last < min_gap:
+                _heal_next = last + 86400
+                return
+            before = edge_version()
+            try:
+                r = subprocess.run([sys.executable, "-m", "pip", "install",
+                                    "--upgrade", "--no-cache-dir", "edge-tts"],
+                                   capture_output=True, text=True, timeout=600)
+                rc, tail = r.returncode, (r.stdout + r.stderr)[-400:]
+            except Exception as e:
+                rc, tail = -1, str(e)[-400:]
+            for m in [m for m in list(sys.modules)
+                      if m == "edge_tts" or m.startswith("edge_tts.")]:
+                sys.modules.pop(m, None)
+            importlib.invalidate_caches()
+            after = edge_version()
+            if after != before:
+                _down.pop("edge", None)     # new code: give it a chance now
+            rec = {"at": time.time(), "reason": reason, "before": before,
+                   "after": after, "rc": rc, "tail": tail}
+            try:
+                json.dump(rec, open(HEAL_FILE, "w", encoding="utf-8"))
+            except Exception:
+                pass
+            _heal_next = time.time() + 86400
+        finally:
+            _heal_lock.release()
+    threading.Thread(target=run, daemon=True).start()
+
+def edge_refused(e):
+    """Edge threw. Send it to the back of the queue for a while, and if the
+    service actually refused us, as opposed to the phone being offline, the
+    library is the likely culprit: upgrade it."""
+    _down["edge"] = time.time() + ENGINE_DOWN_FOR
+    s = "%s %s" % (type(e).__name__, e)
+    if "403" in s or "401" in s or "Handshake" in s:
+        edge_heal("refused: " + s[:160], 3600)
+
+GOOGLE_TTS = "https://translate.google.com/translate_tts"
+
+def _google_chunks(text, cap=190):
+    """The endpoint takes about 200 characters. Split on spaces; a run with
+    no spaces in it at all is cut where it must be."""
+    out, cur = [], ""
+    for w in text.split():
+        while len(w) > cap:
+            if cur:
+                out.append(cur); cur = ""
+            out.append(w[:cap]); w = w[cap:]
+        if cur and len(cur) + 1 + len(w) > cap:
+            out.append(cur); cur = w
+        else:
+            cur = (cur + " " + w) if cur else w
+    if cur:
+        out.append(cur)
+    return out
+
+def synth_unit_google(text, locale, mp3_path, json_path):
+    """The keyless voice behind Google Translate. Plainer than the other two,
+    but it answers, in every language the app has, with no key and no quota.
+    Its mp3 is the same 24 kHz mono Edge sends, so the waveform timing that
+    serves a Speechify clip without marks serves this one too."""
+    tls = [locale]
+    if locale.split("-")[0] != locale:
+        tls.append(locale.split("-")[0])
+    audio, err = b"", "Google returned no audio"
+    for tl in tls:
+        try:
+            parts = []
+            for q in _google_chunks(text):
+                url = GOOGLE_TTS + "?" + urllib.parse.urlencode(
+                    {"ie": "UTF-8", "client": "tw-ob", "tl": tl, "q": q})
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                parts.append(urllib.request.urlopen(req, timeout=30).read())
+            audio = b"".join(parts)
+            if audio:
+                break
+        except Exception as e:
+            err = "Google failed: %s" % e
+    if not audio:
+        return err
+    try:
+        with open(mp3_path + ".part", "wb") as f:
+            f.write(audio)
+        os.replace(mp3_path + ".part", mp3_path)
+    except Exception as e:
+        return "could not write the clip: %s" % e
+    tokens = align_tokens(text, [], None)
+    ref, dur, changed = refine_tokens(mp3_path, tokens)
+    if changed:
+        tokens = ref
+    total = 0.0
+    for t in tokens:
+        if t.get("d", 0.0) > total:
+            total = t["d"]
+    json.dump({"tokens": tokens, "bounds": [], "total": round(total, 3),
+               "engine": "google-pcm", "sil": measure_silence(mp3_path)},
+              open(json_path, "w", encoding="utf-8"), ensure_ascii=False)
+    return ""
+
+def _lang_of(vkey):
+    """The language a sentence is meant to be heard in: an Edge voice knows
+    its own, a Speechify key is told by the switch."""
+    if vkey in VOICE_BY_VKEY:
+        return VKEY_LANG.get(vkey, "en")
+    return "hr" if reading_lang() == "hr" else "en"
+
+def synth_as(eng, sent, vkey, mp3, js):
+    """Speak one sentence with one engine. Returns (error, applies): an
+    engine that does not apply here (no key, wrong language) is skipped
+    without being counted as down."""
+    lang = _lang_of(vkey)
+    if eng == "edge":
+        if vkey in VOICE_BY_VKEY:
+            voice = VOICE_BY_VKEY[vkey][0]
+        else:
+            voice = VOICE_BY_VKEY["hrF" if lang == "hr" else "ukF"][0]
+        return synth_unit(sent, voice, mp3, js), True
+    if eng == "speechify":
+        try:
+            if not sp_live_keys():
+                return "no Speechify key", False
+        except Exception:
+            return "no Speechify key", False
+        # Speechify speaks whatever the switch says; standing in for an
+        # Edge voice of another language it would read in the wrong one.
+        if vkey in VOICE_BY_VKEY and lang != _lang_of(SP_SEAT_VKEY):
+            return "Speechify is set to another language", False
+        vid = SP_VOICES[vkey]["id"] if vkey in SP_VOICES else ""
+        return synth_unit_speechify(sent, vid, mp3, js), True
+    if eng == "google":
+        if vkey in VOICE_BY_VKEY:
+            locale = "-".join(VOICE_BY_VKEY[vkey][0].split("-")[:2])
+        elif lang == "hr":
+            locale = "hr"
+        else:
+            locale = "en-US" if load_state().get("spAccent") == "us" else "en-GB"
+        return synth_unit_google(sent, locale, mp3, js), True
+    return "unknown engine", False
+
+def fb_paths(tid, vkey, idx, eng, make=False):
+    mp3, js = unit_paths(tid, vkey, idx)
+    d = os.path.dirname(mp3) + "__fb-" + eng
+    if make:                    # only when a stand-in is about to be written
+        os.makedirs(d, exist_ok=True)
+    return os.path.join(d, os.path.basename(mp3)), os.path.join(d, os.path.basename(js))
+
+def is_fallback_clip(path):
+    return "__fb-" in os.path.basename(os.path.dirname(path or ""))
+
+
 # ---------- per-sentence generation, guarded so we never synth twice ----------
 _gen_locks = {}
 _gen_guard = threading.Lock()
@@ -3586,17 +3793,41 @@ def ensure_unit(tid, vkey, idx):
         if idx < 0 or idx >= payload["count"]:
             return None, None, "out of range"
         sent = payload["sentences"][idx]
-        if vkey == SP_SEAT_VKEY:
-            # the standing key: sp_voice_for reads the language and the seats
-            # afresh, so the sentence is spoken by whoever is chosen NOW
-            err = synth_unit_speechify(sent, "", mp3, js)
-        elif vkey in SP_VOICES:
-            err = synth_unit_speechify(sent, SP_VOICES[vkey]["id"], mp3, js)
-        else:
-            err = synth_unit(sent, VOICE_BY_VKEY[vkey][0], mp3, js)
-        if err:
-            return None, None, err
-        return mp3, js, ""
+        # the standing key and a named Speechify voice both go to Speechify;
+        # sp_voice_for reads the language and the seats afresh, so the
+        # sentence is spoken by whoever is chosen NOW
+        primary = "speechify" if (vkey == SP_SEAT_VKEY or vkey in SP_VOICES) else "edge"
+        chain = [primary] + FALLBACK_ORDER[primary]
+        edge_heal("daily look", 86400)
+        # The clip and its word times arrive as two requests. A stand-in made
+        # a moment ago answers the second one too, so the times never belong
+        # to a different voice than the sound.
+        for eng in chain[1:]:
+            fm, fj = fb_paths(tid, vkey, idx, eng)
+            if os.path.isfile(fm) and os.path.isfile(fj) and (
+                    engine_down(primary) or time.time() - os.path.getmtime(fm) < 60):
+                return fm, fj, ""
+        # Engines that failed a moment ago go to the back, not out: when
+        # everything is failing, everything is still tried.
+        chain.sort(key=engine_down)
+        errs = []
+        for eng in chain:
+            om, oj = (mp3, js) if eng == primary else fb_paths(tid, vkey, idx, eng, make=True)
+            err, applies = synth_as(eng, sent, vkey, om, oj)
+            if not err:
+                if eng != primary:
+                    try:
+                        d = json.load(open(oj, encoding="utf-8"))
+                        d["fb"] = eng
+                        d["fbFrom"] = primary
+                        json.dump(d, open(oj, "w", encoding="utf-8"), ensure_ascii=False)
+                    except Exception:
+                        pass
+                return om, oj, ""
+            if applies:
+                _down[eng] = time.time() + ENGINE_DOWN_FOR
+                errs.append("%s: %s" % (eng, err))
+        return None, None, "; ".join(errs) or "no engine could speak this"
 
 # ---------- state ----------
 _DEFAULT_STATE = {"voice": 1, "speed": 1.0, "volume": 100, "gap": 0.0, "lag": 0.0,
@@ -4744,6 +4975,18 @@ def api_library_delete_all():
         lib_delete(m["id"]); n += 1
     return jsonify({"ok": True, "deleted": n})
 
+@app.route("/api/engines")
+def api_engines():
+    """What is up, what is down, and what the last self-repair did."""
+    try:
+        heal = json.load(open(HEAL_FILE, encoding="utf-8"))
+    except Exception:
+        heal = None
+    now = time.time()
+    return jsonify({"edgeTts": edge_version(),
+                    "down": {k: round(v - now) for k, v in _down.items() if v > now},
+                    "order": FALLBACK_ORDER, "lastHeal": heal})
+
 @app.route("/api/audio/<tid>/<vkey>/<int:idx>.mp3")
 def api_audio(tid, vkey, idx):
     mp3, js, err = ensure_unit(tid, vkey, idx)
@@ -4754,6 +4997,9 @@ def api_audio(tid, vkey, idx):
     # at a given url never changes. Saying so removes the revalidation round
     # trip the browser was making between every pair of sentences.
     resp.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    if is_fallback_clip(mp3):
+        # a stand-in: the real voice must be asked for again next time
+        resp.headers["Cache-Control"] = "no-store"
     return resp
 
 @app.route("/api/bounds/<tid>/<vkey>/<int:idx>")
@@ -6325,7 +6571,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.48 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.49 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -6870,6 +7116,18 @@ const silCache = new Map();
 function toast(msg){
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove("show"),2600);
+}
+/* A STAND-IN IS SAID ONCE, NOT ON EVERY SENTENCE.
+   When an engine fails the server reads the sentence with the next one and
+   marks its timing file with fb (who spoke) and fbFrom (who should have).
+   Say so when that starts, and again when the real voice is back. */
+const ENGINE_NAME = {edge:"Edge", google:"Google", speechify:"Speechify"};
+function fbNote(d){
+  const now = (d && d.fb) ? d.fb + "<" + d.fbFrom : "";
+  if(now === (fbNote._last || "")) return;
+  if(now) toast(`${ENGINE_NAME[d.fbFrom]||d.fbFrom} is not answering \u2014 reading with ${ENGINE_NAME[d.fb]||d.fb}`);
+  else if(fbNote._last) toast("The chosen voice is back");
+  fbNote._last = now;
 }
 /* THE URL MUST NAME THE VOICE THAT WILL SPEAK.
    A Speechify vkey says only "Speechify"; which voice and which model
@@ -8472,7 +8730,7 @@ function prefetch(i){
   if(i<0 || i>=ST.sentences.length) return;
   if(!boundsCache.has(i)){
     api(boundsUrl(i)).then(r=>r.ok?r.json():{tokens:[]})
-      .then(d=>{ boundsCache.set(i,(d&&d.tokens)||[]);
+      .then(d=>{ fbNote(d); boundsCache.set(i,(d&&d.tokens)||[]);
                  silCache.set(i,(d&&d.sil)||[]); }).catch(()=>{});
   }
   warmUnit(i);
@@ -8589,7 +8847,7 @@ function wordGap(w, el, runs, isOn){
 function loadBounds(i){
   if(boundsCache.has(i)) return Promise.resolve(boundsCache.get(i));
   return api(boundsUrl(i)).then(r=>r.ok?r.json():{tokens:[]})
-    .then(d=>{ const t=(d&&d.tokens)||[]; boundsCache.set(i,t);
+    .then(d=>{ fbNote(d); const t=(d&&d.tokens)||[]; boundsCache.set(i,t);
                silCache.set(i,(d&&d.sil)||[]); return t; })
     .catch(()=>{ boundsCache.set(i,[]); silCache.set(i,[]); return []; });
 }
