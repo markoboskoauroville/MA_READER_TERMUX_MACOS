@@ -2949,6 +2949,8 @@ def sp_seat(vid, table, default):
     return table[0]
 
 
+_lang_force = threading.local()
+
 def reading_lang():
     """Which language the app is reading, resolved to eng or hr.
 
@@ -2957,6 +2959,9 @@ def reading_lang():
     when the page is Croatian, because a person who has pressed ENG has said
     what they want and being overruled by a guess is not help.
     """
+    forced = getattr(_lang_force, "v", None)
+    if forced:                  # /api/say names its language outright
+        return forced
     st = load_state()
     mode = st.get("lang", "eng")
     if mode == "hr":
@@ -4986,6 +4991,52 @@ def api_engines():
     return jsonify({"edgeTts": edge_version(),
                     "down": {k: round(v - now) for k, v in _down.items() if v > now},
                     "order": FALLBACK_ORDER, "lastHeal": heal})
+
+# SPEAK THIS, for other programs: Claude's talker sends its replies here so
+# that one app, with one fallback chain, is the voice of this phone. Croatian
+# is Edge's, English is Speechify's, and each falls back as a sentence does.
+# Nothing is saved to the library; the clip is returned and forgotten.
+SAY_ORDER = {"hr": ["edge", "google", "speechify"],
+             "eng": ["speechify", "edge", "google"]}
+
+@app.route("/api/say", methods=["POST"])
+def api_say():
+    data = request.get_json(force=True, silent=True) or {}
+    text = str(data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "nothing to say"}), 400
+    lang = str(data.get("lang") or "auto").lower()
+    lang = "hr" if lang in ("hr", "cro") else "eng" if lang in ("en", "eng") else (
+        "hr" if looks_croatian(text) else "eng")
+    d = os.path.join(HOME, ".maread-web", "say")
+    os.makedirs(d, exist_ok=True)
+    base = os.path.join(d, uuid.uuid4().hex)
+    mp3, js = base + ".mp3", base + ".json"
+    chain = sorted(SAY_ORDER[lang], key=engine_down)
+    errs = []
+    _lang_force.v = lang
+    try:
+        for eng in chain:
+            vkey = SP_SEAT_VKEY if eng == "speechify" else ("hrF" if lang == "hr" else "ukF")
+            err, applies = synth_as(eng, text, vkey, mp3, js)
+            if not err:
+                audio = open(mp3, "rb").read()
+                resp = app.response_class(audio, mimetype="audio/mpeg")
+                resp.headers["X-Engine"] = eng
+                resp.headers["X-Lang"] = lang
+                resp.headers["Cache-Control"] = "no-store"
+                return resp
+            if applies:
+                _down[eng] = time.time() + ENGINE_DOWN_FOR
+                errs.append("%s: %s" % (eng, err))
+    finally:
+        _lang_force.v = None
+        for f in (mp3, js, mp3 + ".part"):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    return jsonify({"error": "; ".join(errs) or "no engine could speak this"}), 502
 
 @app.route("/api/audio/<tid>/<vkey>/<int:idx>.mp3")
 def api_audio(tid, vkey, idx):

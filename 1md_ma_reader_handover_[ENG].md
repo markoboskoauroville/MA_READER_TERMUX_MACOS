@@ -119,6 +119,10 @@ Speechify only stands in for an Edge voice in the language its switch is on;
 otherwise it would read Croatian text in English.
 
     GET /api/engines    edge-tts version, engines down, last self-repair
+    POST /api/say       {"text", "lang": hr|en|auto} -> one mp3, not saved.
+                        Croatian Edge -> Google -> Speechify, English
+                        Speechify -> Edge -> Google. Claude's talker
+                        (termux-tools) speaks through this.
 
 ### The reading language
 
