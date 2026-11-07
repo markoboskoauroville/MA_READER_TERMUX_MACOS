@@ -8,6 +8,16 @@ a bug.
     install   3sh_i_ma_reader_v3_termux.sh
     edition   v3
 
+## Word timings for the phone's subtitle (7.11.2026)
+
+`/api/say` with `"words": true` in the JSON adds two headers to the audio reply: `X-Text` (base64 of the text spoken)
+and `X-Words` (base64 JSON of the word tokens `{s, e, t, d}`). In both installers. The talker (termux-tools) passes them
+to Voice Engine (Mantra) for Android, which lights the spoken word over every app. Without `words` the reply is as
+before. Running check on the phone: `curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:8081/` gives 200; if not, start
+it with Termux's python (`cd ~/.maread-web && setsid nohup /data/data/com.termux/files/usr/bin/python3 server.py
+>server.log 2>&1 &`). A `No module named 'flask'` at the end of server.log is from a start under PRoot's python, not a
+missing package.
+
 ## Before anything else
 
 Read 1md_working_rules_[ENG].md. FOUR progressing tests before shipping, real
