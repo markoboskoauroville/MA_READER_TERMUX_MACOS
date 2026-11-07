@@ -5032,6 +5032,18 @@ def api_say():
                 resp = app.response_class(audio, mimetype="audio/mpeg")
                 resp.headers["X-Engine"] = eng
                 resp.headers["X-Lang"] = lang
+                # The words and when each is said ({s, e, t, d}: character
+                # offsets into the text as sent, seconds into the clip), for the
+                # subtitle overlay (Voice Engine Android). Base64 JSON, so any
+                # character survives a header. Only when asked: "words": true.
+                if data.get("words"):
+                    try:
+                        tok = json.load(open(js, encoding="utf-8")).get("tokens") or []
+                        resp.headers["X-Text"] = base64.b64encode(text.encode("utf-8")).decode("ascii")
+                        resp.headers["X-Words"] = base64.b64encode(json.dumps(
+                            tok, separators=(",", ":")).encode("utf-8")).decode("ascii")
+                    except Exception:
+                        pass
                 resp.headers["Cache-Control"] = "no-store"
                 return resp
             if applies:
