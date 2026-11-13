@@ -20,6 +20,23 @@ maread-update --remove   # take the app off, keep the library
 mareadweb                # run it
 ```
 
+**It keeps itself up to date (v3.50).** Every time `mareadweb` starts it asks
+GitHub, in one small request, whether the installer there has changed since
+the one installed here. If it has, it downloads it, checks it, installs it
+keeping your settings, keys and library, and starts the new version — no
+`maread-update` needed. While it runs it checks again every six hours and says
+so in the terminal (press U), rather than restarting under you mid-sentence.
+Offline, a slow GitHub or a bad download never block reading: it starts the
+version already here. This exists because a phone ran a two-month-old build
+whose Edge voice failed every clip ("Could not load sentence 1") while the fix
+sat on GitHub.
+
+```bash
+touch ~/.maread-web/autoupdate_off     # turn it off
+rm ~/.maread-web/autoupdate_off        # turn it back on
+MAREAD_NO_AUTOUPDATE=1 mareadweb       # skip it once
+```
+
 Installing is a **wipe, not an overwrite**. Any server still running is
 stopped first, because a live Flask keeps serving the old page out of memory
 and makes an update look like it did nothing. Then your keys and settings are

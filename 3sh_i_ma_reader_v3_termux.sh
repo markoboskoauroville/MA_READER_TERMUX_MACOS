@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 ###############################################################################
-# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.49
+# MA READER TERMUX  (Edge / Speechify)  -  installer for Termux   edition: v3.50
 #
 # repo: MA_READER_TERMUX_MACOS
 #
@@ -384,7 +384,7 @@ logo() {   # six row colours, top light to bottom ember
 }
 banner_fire() {
   logo "$GLOW" "$GOLD" "$AMBER" "$FLAME" "$EMBER" "$COAL"
-  printf '   %sR E A D E R%s  %sv3.49%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
+  printf '   %sR E A D E R%s  %sv3.50%s\n' "$KEY" "$OFF" "$VIOLET" "$OFF"
   printf '   %sFire | the Word, the MA ecosystem%s\n\n' "$DIM" "$OFF"
 }
 banner_ash() {
@@ -6642,7 +6642,7 @@ body.fullread .reader-scroll{position:fixed; inset:0; max-height:none;
   <section class="view hidden" id="helpView">
     <div class="help">
       <h2>How MA Reader works</h2>
-      <p class="sub">MA Reader <span id="appVer">v3.49 &middot; Edge / Speechify</span></p>
+      <p class="sub">MA Reader <span id="appVer">v3.50 &middot; Edge / Speechify</span></p>
       <p class="lead">MA Reader turns any text into speech and lights up each
         word as it is spoken. There are two ways to read.</p>
 
@@ -11492,6 +11492,128 @@ adb_bring_up() {
   printf '   %srun maread-adb once to pair this phone.%s\n' "$DIMC" "$OFFC"
 }
 
+# --------------------------------------------------- always up to date -----
+# Every start asks GitHub, before the server comes up, whether the installer
+# there is still the one that was installed here. On 13.11.2026 the phone was
+# still running a September build whose Edge voice got a 403 on every clip:
+# paste, "Could not load sentence 1", and the page just sat there. The fix had
+# been on GitHub for a week. Nobody had typed maread-update, so nothing moved.
+#
+# The question costs one HEAD request (no download) and its ETag, which
+# changes whenever the file's content changes, bumped version or not. Only
+# when it differs is the full file fetched, checked the way maread-update
+# checks it, and installed with --offline (keep settings, keys, library).
+# Then this launcher re-runs itself, so the NEW launcher starts the NEW server.
+#
+# It never stands between Baba and reading: offline, GitHub slow (6 s cap), a
+# bad download or a failed install all print one line and start the version
+# already here. Another copy already serving is left alone, because replacing
+# its files underneath it is exactly what the installer refuses to do.
+#
+#   touch ~/.maread-web/autoupdate_off   turns it off
+#   MAREAD_NO_AUTOUPDATE=1 mareadweb     skips it once
+UPD_RAW="${MAREAD_UPDATE_RAW:-https://raw.githubusercontent.com/markoboskoauroville/MA_READER_TERMUX_MACOS/main}"
+UPD_FILE="3sh_i_ma_reader_v3_termux.sh"
+ETAGFILE="$APPDIR/installed_etag.txt"
+REDC=$'\033[38;5;203m'; AMBC=$'\033[38;5;214m'
+
+upd_etag(){
+  curl -sIL --connect-timeout 4 -m 6 "$UPD_RAW/$UPD_FILE" 2>/dev/null \
+    | tr -d '\r' | awk 'tolower($1)=="etag:"{e=$2} END{print e}'
+}
+upd_have_ver(){
+  grep -o 'appVer">v[0-9.]*' "$APPDIR/static/index.html" 2>/dev/null \
+    | head -1 | sed 's/.*>v//'
+}
+upd_others_running(){
+  for p in $(pgrep -f "$APPDIR/server.py" 2>/dev/null); do
+    [ "$p" = "$$" ] && continue
+    c="$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)"
+    case "$c" in *python*"$APPDIR/server.py"*) echo "$p" ;; esac
+  done
+}
+
+auto_update(){
+  [ "${MAREAD_NO_AUTOUPDATE:-0}" = "1" ] && return 0
+  [ -f "$APPDIR/autoupdate_off" ] && {
+    printf '   %sauto update is off (rm %s to turn it on)%s\n' "$DIMC" "$APPDIR/autoupdate_off" "$OFFC"
+    return 0; }
+  # set by the re-run below, so a second start never loops into a third
+  [ "${MAREAD_JUST_UPDATED:-0}" = "1" ] && {
+    printf '   %supdated to v%s%s\n' "$GRNC" "$(upd_have_ver)" "$OFFC"; return 0; }
+  command -v curl >/dev/null 2>&1 || return 0
+
+  printf '   %schecking GitHub for a newer version%s' "$DIMC" "$OFFC"
+  REMOTE="$(upd_etag)"
+  if [ -z "$REMOTE" ]; then
+    printf '\r   %sGitHub not reachable, starting the version already here%s\n' "$DIMC" "$OFFC"
+    return 0
+  fi
+  LOCAL="$(cat "$ETAGFILE" 2>/dev/null)"
+  if [ "$REMOTE" = "$LOCAL" ]; then
+    printf '\r   %sup to date, v%s                       %s\n' "$GRNC" "$(upd_have_ver)" "$OFFC"
+    return 0
+  fi
+
+  TMPU="$(mktemp -d 2>/dev/null)" || return 0
+  if ! curl -fsSL --connect-timeout 10 -m 120 -o "$TMPU/$UPD_FILE" "$UPD_RAW/$UPD_FILE" 2>/dev/null; then
+    printf '\r   %sthe download failed, starting the version already here%s\n' "$REDC" "$OFFC"
+    rm -rf "$TMPU"; return 0
+  fi
+  SIZE="$(wc -c < "$TMPU/$UPD_FILE")"
+  if [ "$SIZE" -lt 100000 ] || ! head -1 "$TMPU/$UPD_FILE" | grep -q '^#!' \
+     || ! bash -n "$TMPU/$UPD_FILE" 2>/dev/null; then
+    printf '\r   %sthe download looks wrong (%s bytes), not installed%s\n' "$REDC" "$SIZE" "$OFFC"
+    rm -rf "$TMPU"; return 0
+  fi
+  NEW="$(grep -m1 'edition: v' "$TMPU/$UPD_FILE" | sed 's/.*edition: v//')"
+  OLD="$(upd_have_ver)"
+
+  # No ETag on record yet (installed by hand, or by an installer older than
+  # this). Same edition means nothing to do: remember this ETag and go on.
+  if [ -z "$LOCAL" ] && [ -n "$OLD" ] && [ "$OLD" = "$NEW" ]; then
+    echo "$REMOTE" > "$ETAGFILE" 2>/dev/null
+    printf '\r   %sup to date, v%s                       %s\n' "$GRNC" "$OLD" "$OFFC"
+    rm -rf "$TMPU"; return 0
+  fi
+
+  if [ -n "$(upd_others_running)" ]; then
+    printf '\r   %sv%s is on GitHub, but another copy is serving; it updates next start%s\n' \
+      "$AMBC" "$NEW" "$OFFC"
+    rm -rf "$TMPU"; return 0
+  fi
+
+  printf '\r   %supdating v%s -> v%s, settings and keys are kept%s\n' "$AMBC" "${OLD:-?}" "$NEW" "$OFFC"
+  # </dev/null: nobody is asked anything; --offline keeps settings and skips pkg
+  if bash "$TMPU/$UPD_FILE" --offline </dev/null >"$TMPU/install.log" 2>&1; then
+    echo "$REMOTE" > "$ETAGFILE" 2>/dev/null
+    cp "$TMPU/install.log" "$APPDIR/last_update.log" 2>/dev/null || true
+    rm -rf "$TMPU"
+    termux-wake-unlock 2>/dev/null || true
+    # the installer replaced this very file; run the new one
+    ME="$(command -v mareadweb 2>/dev/null)"; [ -x "$ME" ] || ME="$0"
+    MAREAD_JUST_UPDATED=1 exec "$ME" "$@"
+  fi
+  printf '   %sthe install failed, see %s%s\n' "$REDC" "$HOME/maread_update_failed.log" "$OFFC"
+  cp "$TMPU/install.log" "$HOME/maread_update_failed.log" 2>/dev/null || true
+  rm -rf "$TMPU"
+  return 0
+}
+
+auto_update "$@"
+
+# While it runs, the same question is asked every six hours. It only says so
+# here: restarting the server under someone mid-sentence would be worse than
+# a version that is a few hours old. U installs it, or the next start does.
+upd_watch(){
+  while sleep 21600; do
+    R="$(upd_etag)"
+    if [ -n "$R" ] && [ "$R" != "$(cat "$ETAGFILE" 2>/dev/null)" ]; then
+      printf '\n   %sa newer MA Reader is on GitHub: press U, or restart mareadweb%s\n' "$AMBC" "$OFFC"
+    fi
+  done
+}
+
 adb_bring_up
 
 rm -f "$PORTFILE"
@@ -11509,6 +11631,10 @@ rm -f "$PORTFILE"
 
 MAREAD_WEB_HOST="$HOST" MAREAD_WEB_PORT="$PORT" python "$APPDIR/server.py" &
 SRV=$!
+WATCH=""
+if [ "${MAREAD_NO_AUTOUPDATE:-0}" != "1" ] && [ ! -f "$APPDIR/autoupdate_off" ]; then
+  upd_watch & WATCH=$!
+fi
 # The launcher reads single keys too, so it carries the same guarantee. Its
 # cleanup now puts the terminal back before anything else, because a person
 # whose terminal has gone deaf cannot even see whether the server stopped.
@@ -11518,7 +11644,8 @@ tty_restore() {
   [ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" 2>/dev/null || true
   [ -t 0 ] && stty echo 2>/dev/null || true
 }
-cleanup(){ tty_restore; kill "$SRV" 2>/dev/null; termux-wake-unlock 2>/dev/null; }
+cleanup(){ tty_restore; kill "$SRV" 2>/dev/null
+  [ -n "$WATCH" ] && kill "$WATCH" 2>/dev/null; termux-wake-unlock 2>/dev/null; }
 trap 'cleanup' EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
